@@ -8,6 +8,7 @@
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
 :root { --sidebar-w: 230px; }
@@ -755,97 +756,65 @@ async function printById(sid, mode) {
     let html;
 
     if (mode === 'dymo') {
-      // ── DYMO MODU: her etiket kendi 57×32 mm sayfasında ────────────
-      const labelDivs = codes.map((c,i) => {
-        const main = i===0;
-        return `<div class="label${main?' main':''}">
-          <img src="${qrs[i]}" alt="${c}">
-          <div class="label-text">
-            <div class="top">${main ? 'KOÇAN SERİSİ' : 'ADİSYON ' + String(i).padStart(5,'0')}</div>
-            <div class="code">${c}</div>
-          </div>
-        </div>`;
-      }).join('\n');
+      // ── DYMO MODU: jsPDF ile her sayfa = 32×57mm PDF ────────────────
+      // CSS @page yerine PDF kullanıyoruz — kağıt boyutu seçmeye gerek yok.
+      // DYMO sürücüsü PDF sayfa boyutunu otomatik okur.
+      const { jsPDF } = window.jspdf;
+      const W = 32, H = 57;   // mm — etiket boyutu (dikey/portrait)
+      const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:[W, H] });
 
-      html = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8">
-<title>DYMO - ${series.series_code}</title>
-<style>
-/* ══ EKRAN GÖRÜNÜMÜ ══ */
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial,sans-serif;background:#e2e8f0}
+      codes.forEach((code, i) => {
+        if (i > 0) doc.addPage([W, H], 'portrait');
+        const isMain = i === 0;
 
-.bar{background:#1e293b;color:white;padding:10px 16px;
-     display:flex;align-items:center;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
-.bar strong{flex:1;font-size:.9rem}
-.bar button{padding:7px 18px;border:none;border-radius:6px;
-            cursor:pointer;font-weight:700;font-size:.85rem}
-.bp{background:#22c55e;color:white}.bc{background:#ef4444;color:white}
+        // Arka plan (koçan için açık mavi-gri)
+        if (isMain) {
+          doc.setFillColor(241, 245, 249);
+          doc.rect(0, 0, W, H, 'F');
+        }
 
-.info{background:#eff6ff;border-left:4px solid #3b82f6;
-      padding:10px 14px;margin:12px;font-size:.8rem;color:#1e40af;border-radius:6px}
+        // QR kodu — üstte ortalanmış, 24×24mm
+        const qrX = (W - 24) / 2;
+        doc.addImage(qrs[i], 'PNG', qrX, 4, 24, 24);
 
-/* Etiketler — ekranda flex grid */
-.labels-wrap{display:flex;flex-wrap:wrap;gap:8px;padding:14px;justify-content:center}
+        // Tip etiketi
+        doc.setFontSize(6);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 41, 59);
+        const topLabel = isMain ? 'KOCAN SERISI' : 'ADISYON ' + String(i).padStart(5,'0');
+        doc.text(topLabel, W/2, 31, { align:'center' });
 
-.label{
-  width:57mm;height:32mm;
-  border:1px solid #94a3b8;border-radius:3px;
-  background:white;box-shadow:0 1px 4px rgba(0,0,0,.13);
-  display:flex;flex-direction:row;align-items:center;
-  justify-content:center;gap:2mm;padding:2mm;
-  overflow:hidden;
-}
-.label.main{border:2px solid #1e293b;background:#f1f5f9}
-.label img{width:22mm;height:22mm;flex-shrink:0}
-.label-text{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;min-width:0}
-.top{font-size:6.5pt;font-weight:800;color:#1e293b;letter-spacing:.4pt;white-space:nowrap}
-.code{font-size:4.5pt;color:#475569;word-break:break-all;font-family:monospace;
-      margin-top:1.5mm;line-height:1.4;max-width:28mm}
+        // Barkod numarası
+        doc.setFontSize(5);
+        doc.setFont('courier', 'normal');
+        doc.setTextColor(71, 85, 105);
+        doc.text(code, W/2, 35.5, { align:'center' });
 
-/* ══ YAZICI: Her etiket = tek DYMO etiketi ══
-   @page boyutu etiketle birebir aynı → her label bir "kağıt" oluyor
-   NOT: inline style yok, bu yüzden @media print kuralları çalışır */
-@media print {
-  body{background:white}
-  .bar,.info{display:none}
-  @page{size:57mm 32mm;margin:0mm}
-  .labels-wrap{
-    display:block;          /* flex'i kapat, block akış */
-    padding:0;gap:0;
-  }
-  .label{
-    display:flex;           /* içerik düzeni korunsun */
-    width:57mm;height:32mm;
-    border:none;box-shadow:none;border-radius:0;
-    padding:1.5mm;
-    margin:0;
-    page-break-after:always;
-    break-after:page;
-    overflow:visible;
-  }
-  .label:last-child{page-break-after:avoid;break-after:avoid}
-  .label.main{background:#f1f5f9}
-  .label img{width:22mm;height:22mm}
-  .top{font-size:6.5pt}
-  .code{font-size:4.5pt}
-}
-</style></head><body>
-<div class="bar">
-  <strong>🏷️ ${series.series_code} — DYMO (57×32 mm) — ${codes.length} etiket</strong>
-  <button class="bp" onclick="window.print()">🖨️ DYMO'ya Gönder</button>
-  <button class="bc" onclick="window.close()">✕ Kapat</button>
-</div>
-<div class="info">
-  ⚙️ <strong>Yazdırmadan önce şu ayarları yapın:</strong>
-  &nbsp; Yazıcı → <strong>DYMO</strong>
-  &nbsp;|&nbsp; Kağıt boyutu → <strong>57 × 32 mm</strong>
-  &nbsp;|&nbsp; Ölçek → <strong>%100 (Gerçek boyut)</strong>
-  &nbsp;|&nbsp; Kenar boşluğu → <strong>Yok</strong>
-</div>
-<div class="labels-wrap">
-${labelDivs}
-</div>
-</body></html>`;
+        // Alt ince çizgi
+        doc.setDrawColor(148, 163, 184);
+        doc.setLineWidth(0.2);
+        doc.line(3, 38.5, W-3, 38.5);
+
+        // Seri adı (küçük)
+        doc.setFontSize(4.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(100, 116, 139);
+        doc.text('Adisyon Takip Sistemi', W/2, 41.5, { align:'center' });
+      });
+
+      // PDF'yi yeni sekmede aç (tarayıcı PDF görüntüleyici kullanır)
+      const pdfBlob = doc.output('blob');
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      const win = window.open(pdfUrl, '_blank');
+      if (!win) {
+        // Popup engelcisi varsa indir
+        const a = document.createElement('a');
+        a.href = pdfUrl;
+        a.download = `etiketler-${series.series_code}.pdf`;
+        a.click();
+      }
+      toast('✅ PDF oluşturuldu! DYMO yazıcıyı seçip yazdırın.');
+      return; // html yolu kullanılmayacak
 
     } else {
       // ── A4 MODU: eski hâl — grid, tek sayfa ────────────────────────
