@@ -84,8 +84,10 @@ body  { background:#f1f5f9; font-size:.9rem; }
 /* ── Page chips ── */
 .pg { width:42px; height:26px; display:flex; align-items:center; justify-content:center;
       border-radius:5px; font-size:10px; font-weight:700; }
-.pg-ok { background:#d1fae5; color:#065f46; }
-.pg-no { background:#fef3c7; color:#92400e; }
+.pg-ok  { background:#d1fae5; color:#065f46; }
+.pg-no  { background:#fef3c7; color:#92400e; }
+.pg-reset { cursor:pointer; position:relative; }
+.pg-reset:hover { background:#fee2e2; color:#991b1b; outline:2px solid #ef4444; }
 
 /* ── Scan ── */
 .scan-res { border-radius:12px; padding:14px; }
@@ -281,7 +283,15 @@ body  { background:#f1f5f9; font-size:.9rem; }
       </div></div>
       <div id="gen-res"></div>
       <div class="card mt-3"><div class="card-body">
-        <h6 class="mb-3">Son Oluşturulanlar</h6>
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <h6 class="mb-0 flex-grow-1">Tüm Seriler</h6>
+          <input id="recent-sq" type="text" class="form-control form-control-sm"
+            style="max-width:200px" placeholder="🔍 Ara..."
+            oninput="loadRecentGen()">
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadRecentGen()">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
         <div id="recent-gen">Yükleniyor...</div>
       </div></div>
     </div>
@@ -377,6 +387,9 @@ body  { background:#f1f5f9; font-size:.9rem; }
       <div class="modal-header"><h5 class="modal-title" id="mSeriesTitle">Seri Detayı</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
       <div class="modal-body" id="mSeriesBody"><div class="text-center py-5"><div class="spinner-border"></div></div></div>
       <div class="modal-footer">
+        <button id="btn-reset-series" class="btn btn-outline-danger d-none me-auto" onclick="resetSeriesScans()">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Okutmaları Sıfırla
+        </button>
         <button id="btn-print" class="btn btn-success d-none" onclick="doPrint()"><i class="bi bi-printer me-1"></i>Etiket Yazdır</button>
         <button class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
       </div>
@@ -645,7 +658,9 @@ async function openSeriesDetail(id) {
   curSeriesId = id;
   const modal = new bootstrap.Modal(document.getElementById('mSeries'));
   document.getElementById('mSeriesBody').innerHTML = '<div class="text-center py-5"><div class="spinner-border"></div></div>';
-  document.getElementById('btn-print').classList.toggle('d-none', !['admin','yonetici'].includes(ME.role));
+  const isManager = ['admin','yonetici'].includes(ME.role);
+  document.getElementById('btn-print').classList.toggle('d-none', !isManager);
+  document.getElementById('btn-reset-series').classList.toggle('d-none', !isManager);
   modal.show();
   try {
     const [{ data: series }, { data: pages }, { data: asgn }] = await Promise.all([
@@ -671,9 +686,19 @@ async function openSeriesDetail(id) {
       ${miss.length?`<h6 class="mb-2">⚠️ Okutulmayan (${miss.length})</h6>
         <div class="d-flex flex-wrap gap-1 mb-3">${miss.map(p=>`<div class="pg pg-no" title="${p.page_barcode}">${String(p.page_number).padStart(3,'0')}</div>`).join('')}</div>`
         :`<div class="alert alert-success py-2 mb-3">✅ Tüm adisyonlar okutulmuş!</div>`}
-      <h6 class="mb-2">Tüm Adisyonlar</h6>
+      <h6 class="mb-2">Tüm Adisyonlar ${isManager && ok.length ? `<small class="text-muted fw-normal">(okutulmuş olanlara tıklayarak tek tek sıfırlayabilirsiniz)</small>` : ''}</h6>
       <div class="d-flex flex-wrap gap-1">
-        ${(pages||[]).map(p=>`<div class="pg ${p.scanned?'pg-ok':'pg-no'}" title="${p.scanned?'Okutuldu: '+fdt(p.scanned_at):'Bekliyor'}">${String(p.page_number).padStart(3,'0')}</div>`).join('')}
+        ${(pages||[]).map(p => {
+          const canReset = p.scanned && isManager;
+          const title = p.scanned
+            ? 'Okutuldu: ' + fdt(p.scanned_at) + (canReset ? ' — Tıkla: Sıfırla' : '')
+            : 'Bekliyor';
+          return `<div class="pg ${p.scanned?'pg-ok':'pg-no'}${canReset?' pg-reset':''}"
+            title="${title}"
+            ${canReset ? `onclick="resetPageScan(${p.id})"` : ''}>
+            ${String(p.page_number).padStart(3,'0')}
+          </div>`;
+        }).join('')}
       </div>`;
   } catch(e) { document.getElementById('mSeriesBody').innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
 }
@@ -719,15 +744,61 @@ async function doGenerate() {
   } catch(e) { el.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
 }
 
+// ── Tek sayfa okutmasını sıfırla ──────────────────────────────
+async function resetPageScan(pageId) {
+  if (!confirm('Bu adisyonun okutmasını sıfırlamak istiyor musunuz?')) return;
+  const { error } = await sb.from('adisyon_pages')
+    .update({ scanned: false, scanned_at: null, scanned_by: null, amount: null })
+    .eq('id', pageId);
+  if (error) { alert('Hata: ' + error.message); return; }
+  toast('Okutma sıfırlandı ✓');
+  openSeriesDetail(curSeriesId);
+}
+
+// ── Serinin tüm okutmalarını sıfırla ─────────────────────────
+async function resetSeriesScans() {
+  const scannedCount = document.querySelectorAll('#mSeriesBody .pg-ok').length;
+  if (scannedCount === 0) { toast('Zaten okutulmuş adisyon yok'); return; }
+  if (!confirm(`Bu serinin ${scannedCount} adet okutmasını silmek istiyor musunuz?\n(Bu işlem geri alınamaz)`)) return;
+  const { error } = await sb.from('adisyon_pages')
+    .update({ scanned: false, scanned_at: null, scanned_by: null, amount: null })
+    .eq('series_id', curSeriesId)
+    .eq('scanned', true);
+  if (error) { alert('Hata: ' + error.message); return; }
+  toast(`${scannedCount} okutma silindi ✓`);
+  openSeriesDetail(curSeriesId);
+}
+
 async function loadRecentGen() {
   try {
-    const { data } = await sb.from('v_series').select('*').limit(12);
+    const { data } = await sb.from('v_series').select('*').order('id', { ascending: false });
     const el = document.getElementById('recent-gen');
     if (!data?.length) { el.innerHTML='<p class="text-muted mb-0">Henüz seri oluşturulmadı</p>'; return; }
-    el.innerHTML = data.map(s=>`<div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-      <div><code class="fw-bold">${s.series_code}</code>${s.assigned_to_name?`<span class="badge bg-info text-dark ms-2">${s.assigned_to_name}</span>`:''}<small class="text-muted ms-2">${fdts(s.created_at)}</small></div>
-      <button class="btn btn-sm btn-outline-success" onclick="printById(${s.id})"><i class="bi bi-printer"></i></button>
-    </div>`).join('');
+    // Arama filtresi
+    const sq = document.getElementById('recent-sq')?.value?.toLowerCase() || '';
+    const filtered = sq ? data.filter(s =>
+      s.series_code?.toLowerCase().includes(sq) ||
+      s.assigned_to_name?.toLowerCase().includes(sq)
+    ) : data;
+
+    const total = data.length, shown = filtered.length;
+    el.innerHTML = `
+      <div class="text-muted small mb-2">
+        Toplam <strong>${total}</strong> seri${sq ? `, ${shown} sonuç` : ''}
+      </div>
+      ${filtered.map(s=>`<div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+        <div>
+          <code class="fw-bold">${s.series_code}</code>
+          ${s.assigned_to_name?`<span class="badge bg-info text-dark ms-2">${s.assigned_to_name}</span>`:''}
+          <small class="text-muted ms-2">${fdts(s.created_at)}</small>
+          ${s.scanned_count>0?`<span class="badge bg-success ms-1">${s.scanned_count}✓</span>`:''}
+        </div>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-outline-primary" onclick="openSeriesDetail(${s.id})"><i class="bi bi-eye"></i></button>
+          <button class="btn btn-sm btn-outline-success" onclick="printById(${s.id})"><i class="bi bi-printer"></i></button>
+        </div>
+      </div>`).join('')}
+    `;
   } catch(e) {}
 }
 
