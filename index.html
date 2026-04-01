@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Adisyon Takip Sistemi</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root { --sidebar-w: 230px; }
+body  { background:#f1f5f9; font-size:.9rem; }
+
+/* ── Full-screen centred screens ── */
+.fs-screen {
+  min-height:100vh; display:flex;
+  align-items:center; justify-content:center;
+  background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);
+}
+.auth-card { width:380px; max-width:95vw; border-radius:16px; overflow:hidden; }
+
+/* ── Sidebar ── */
+#sidebar {
+  position:fixed; left:0; top:0; bottom:0; width:var(--sidebar-w);
+  background:#1e293b; z-index:200; overflow-y:auto;
+  display:flex; flex-direction:column; transition:transform .25s;
+}
+.sb-logo { padding:20px 16px 12px; border-bottom:1px solid rgba(255,255,255,.07); color:white; }
+.sb-logo .em { font-size:2rem; }
+.sb-logo .ttl { font-weight:700; margin-top:4px; }
+.sb-logo .sub { font-size:.72rem; color:#94a3b8; }
+.sb-nav { flex:1; padding:8px; }
+.nl { display:flex; align-items:center; gap:10px; padding:9px 12px; color:#94a3b8;
+       cursor:pointer; border-radius:8px; margin-bottom:2px; font-size:.88rem;
+       border:none; background:none; width:100%; text-align:left; transition:all .15s; }
+.nl:hover { background:rgba(255,255,255,.08); color:#e2e8f0; }
+.nl.active { background:rgba(13,110,253,.3); color:white; font-weight:600; }
+.nl i { width:20px; text-align:center; font-size:1rem; }
+.sb-foot { padding:8px 8px 14px; border-top:1px solid rgba(255,255,255,.07); }
+
+/* ── Main ── */
+#app-screen { display:none; }
+#main { margin-left:var(--sidebar-w); padding:22px; min-height:100vh; }
+
+/* ── Mobile ── */
+#overlay  { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:199; }
+#bot-nav  { display:none; }
+@media(max-width:767px){
+  #sidebar { transform:translateX(-100%); }
+  #sidebar.open { transform:translateX(0); }
+  #overlay.show { display:block; }
+  #main { margin-left:0; padding:10px 10px 76px; }
+  #bot-nav {
+    display:flex; position:fixed; bottom:0; left:0; right:0;
+    background:white; border-top:1px solid #e2e8f0; z-index:100;
+    box-shadow:0 -2px 8px rgba(0,0,0,.08);
+  }
+  .bn { flex:1; display:flex; flex-direction:column; align-items:center;
+        padding:7px 2px 5px; cursor:pointer; color:#94a3b8;
+        font-size:9px; font-weight:600; border:none; background:none; }
+  .bn.active { color:#0d6efd; }
+  .bn i { font-size:20px; margin-bottom:2px; }
+}
+
+/* ── Sections ── */
+.sec { display:none; animation:fi .2s ease; }
+.sec.active { display:block; }
+@keyframes fi { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+
+/* ── Cards ── */
+.stat-card { background:white; border-radius:12px; padding:16px; text-align:center;
+             box-shadow:0 1px 4px rgba(0,0,0,.08); }
+.stat-n { font-size:2rem; font-weight:800; line-height:1; }
+.stat-l { font-size:.72rem; color:#6c757d; margin-top:4px; }
+.series-card { background:white; border-radius:10px; padding:13px 15px; margin-bottom:9px;
+               box-shadow:0 1px 3px rgba(0,0,0,.08); cursor:pointer; transition:box-shadow .15s; }
+.series-card:hover { box-shadow:0 4px 12px rgba(0,0,0,.12); }
+.prog { height:5px; border-radius:3px; background:#e2e8f0; margin-top:5px; }
+.prog-f { height:100%; border-radius:3px; background:#22c55e; }
+
+/* ── Page chips ── */
+.pg { width:42px; height:26px; display:flex; align-items:center; justify-content:center;
+      border-radius:5px; font-size:10px; font-weight:700; }
+.pg-ok { background:#d1fae5; color:#065f46; }
+.pg-no { background:#fef3c7; color:#92400e; }
+
+/* ── Scan ── */
+.scan-res { border-radius:12px; padding:14px; }
+#qr-reader { border-radius:10px; overflow:hidden; }
+
+/* ── Role badges ── */
+.rb { padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; }
+.r-admin    { background:#fee2e2; color:#991b1b; }
+.r-yonetici { background:#e0e7ff; color:#3730a3; }
+.r-garson   { background:#dcfce7; color:#166534; }
+
+/* ── Toast ── */
+#toast-wrap { position:fixed; top:16px; right:16px; z-index:9999; }
+.toast-msg { background:#1e293b; color:white; padding:10px 16px; border-radius:10px;
+             margin-bottom:8px; font-size:.85rem; box-shadow:0 4px 12px rgba(0,0,0,.2);
+             animation:fi .2s ease; }
+
+.mob-topbar { display:none; align-items:center; justify-content:space-between;
+              margin-bottom:12px; background:white; padding:9px 12px;
+              border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+@media(max-width:767px){ .mob-topbar { display:flex; } }
+
+.page-hdr { margin-bottom:18px; }
+.page-hdr h4 { font-weight:700; margin:0; }
+.tbl-sm td,.tbl-sm th { padding:.3rem .5rem; font-size:.83rem; }
+.empty { text-align:center; padding:36px 16px; color:#94a3b8; }
+.empty i { font-size:2.8rem; display:block; margin-bottom:8px; }
+</style>
+</head>
+<body>
+
+<!-- ════ KURULUM EKRANI ════ -->
+<div id="setup-screen" class="fs-screen" style="display:none">
+  <div class="auth-card card shadow-lg">
+    <div class="card-body p-4">
+      <div class="text-center mb-4">
+        <div style="font-size:2.8rem">⚙️</div>
+        <h5 class="fw-bold mt-2 mb-1">Supabase Bağlantısı</h5>
+        <p class="text-muted small mb-0">İlk kullanımda bir kez girilir, kaydedilir</p>
+      </div>
+      <div id="setup-err" class="alert alert-danger py-2 d-none small"></div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold small">Project URL</label>
+        <input id="sb-url" type="text" class="form-control" placeholder="https://xxxx.supabase.co">
+        <div class="form-text">Supabase → Settings → API → Project URL</div>
+      </div>
+      <div class="mb-4">
+        <label class="form-label fw-semibold small">Anon / Public Key</label>
+        <textarea id="sb-key" class="form-control" rows="2" placeholder="eyJhbGci..."></textarea>
+        <div class="form-text">Supabase → Settings → API → anon public</div>
+      </div>
+      <button class="btn btn-primary w-100 fw-semibold" onclick="doSetup()">
+        <i class="bi bi-plug-fill me-2"></i>Bağlan
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ GİRİŞ EKRANI ════ -->
+<div id="login-screen" class="fs-screen" style="display:none">
+  <div class="auth-card card shadow-lg">
+    <div class="card-body p-4 p-md-5">
+      <div class="text-center mb-4">
+        <div style="font-size:3rem">🍽️</div>
+        <h4 class="fw-bold mt-2 mb-1">Adisyon Takip</h4>
+        <p class="text-muted small mb-0">Lokanta Yönetim Sistemi</p>
+      </div>
+      <div id="login-err" class="alert alert-danger py-2 d-none small"></div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Kullanıcı Adı</label>
+        <input id="lu" type="text" class="form-control form-control-lg" placeholder="admin" autocomplete="username">
+      </div>
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Şifre</label>
+        <input id="lp" type="password" class="form-control form-control-lg" placeholder="••••••" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary btn-lg w-100 fw-semibold" onclick="doLogin()">
+        <i class="bi bi-box-arrow-in-right me-2"></i>Giriş Yap
+      </button>
+      <div class="text-center mt-3">
+        <small class="text-muted" style="cursor:pointer;text-decoration:underline" onclick="showSetup()">
+          ⚙️ Bağlantı ayarlarını değiştir
+        </small>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ UYGULAMA ════ -->
+<div id="app-screen">
+
+  <div id="overlay" onclick="closeSb()"></div>
+
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <div class="sb-logo">
+      <div class="em">🍽️</div>
+      <div class="ttl">Adisyon Takip</div>
+      <div class="sub" id="sb-user"></div>
+    </div>
+    <nav class="sb-nav">
+      <button class="nl" data-s="dashboard"><i class="bi bi-grid-fill"></i>Dashboard</button>
+      <button class="nl" data-s="scan"><i class="bi bi-qr-code-scan"></i>Adisyon Okut</button>
+      <button class="nl ay" data-s="series"><i class="bi bi-collection-fill"></i>Seri Listesi</button>
+      <button class="nl go" data-s="my-series"><i class="bi bi-list-check"></i>Adisyonlarım</button>
+      <button class="nl ao" data-s="generate"><i class="bi bi-plus-square-fill"></i>Seri Oluştur</button>
+      <button class="nl ay" data-s="assign"><i class="bi bi-person-check-fill"></i>Atamalar</button>
+      <button class="nl ay" data-s="history"><i class="bi bi-clock-history"></i>Geçmiş</button>
+      <button class="nl ao" data-s="users"><i class="bi bi-people-fill"></i>Kullanıcılar</button>
+    </nav>
+    <div class="sb-foot">
+      <button class="nl" onclick="logout()"><i class="bi bi-box-arrow-left"></i>Çıkış Yap</button>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+
+    <!-- Mobile topbar -->
+    <div class="mob-topbar">
+      <div class="d-flex align-items-center gap-2">
+        <button class="btn btn-sm btn-outline-secondary" onclick="openSb()"><i class="bi bi-list fs-5"></i></button>
+        <span class="fw-bold">🍽️ Adisyon Takip</span>
+      </div>
+      <span id="mob-badge" class="badge bg-secondary"></span>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="sec-dashboard" class="sec">
+      <div class="page-hdr"><h4>Dashboard</h4></div>
+      <div id="stat-row" class="row g-3 mb-4"></div>
+      <div class="card"><div class="card-body">
+        <h6 class="mb-3"><i class="bi bi-clock-history me-1"></i>Son Okutmalar</h6>
+        <div id="dash-recent">Yükleniyor...</div>
+      </div></div>
+    </div>
+
+    <!-- SCAN -->
+    <div id="sec-scan" class="sec">
+      <div class="page-hdr"><h4><i class="bi bi-qr-code-scan me-2"></i>Adisyon Okut</h4></div>
+      <div class="card mb-3"><div class="card-body">
+        <label class="form-label fw-semibold">Barkod / QR Kodu</label>
+        <div class="input-group">
+          <input id="scan-inp" type="text" class="form-control" style="font-size:1.05rem;font-family:monospace"
+                 placeholder="Barkod okuyucuyu tutun veya yazın...">
+          <button class="btn btn-primary" onclick="processScan()"><i class="bi bi-check2-circle me-1"></i>Onayla</button>
+        </div>
+        <div class="mt-1"><small class="text-muted">💡 Barkod okuyucu Enter tuşuyla otomatik gönderir</small></div>
+      </div></div>
+      <div class="card mb-3"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-semibold"><i class="bi bi-camera me-1"></i>Kamera ile Tara</span>
+          <button id="cam-btn" class="btn btn-sm btn-outline-primary" onclick="toggleCam()">
+            <i class="bi bi-camera"></i> Kamerayı Aç
+          </button>
+        </div>
+        <div id="qr-reader" style="display:none;max-width:380px;margin:0 auto"></div>
+      </div></div>
+      <div id="scan-res" style="display:none" class="mb-3"></div>
+      <div class="card"><div class="card-body">
+        <h6 class="mb-2">Bu Oturumda Okutulanlar</h6>
+        <div id="sess-list"><p class="text-muted mb-0 small">Henüz okutma yapılmadı</p></div>
+      </div></div>
+    </div>
+
+    <!-- SERIES LIST -->
+    <div id="sec-series" class="sec">
+      <div class="d-flex justify-content-between align-items-center page-hdr">
+        <h4 class="mb-0">Seri Listesi</h4>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadSeries()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+      <input type="text" id="sq" class="form-control mb-3" placeholder="🔍 Seri kodu veya garson adı..." oninput="filterSeries()">
+      <div id="series-list">Yükleniyor...</div>
+    </div>
+
+    <!-- MY SERIES -->
+    <div id="sec-my-series" class="sec">
+      <div class="page-hdr"><h4>Adisyonlarım</h4></div>
+      <div id="my-list">Yükleniyor...</div>
+    </div>
+
+    <!-- GENERATE -->
+    <div id="sec-generate" class="sec">
+      <div class="page-hdr"><h4><i class="bi bi-plus-square me-2"></i>Seri Oluştur</h4></div>
+      <div class="card mb-3"><div class="card-body">
+        <label class="form-label fw-semibold">Kaç adet koçan / adisyon serisi?</label>
+        <div class="input-group mb-2" style="max-width:320px">
+          <input id="gen-n" type="number" class="form-control" value="1" min="1" max="200">
+          <span class="input-group-text">adet</span>
+          <button class="btn btn-success" onclick="doGenerate()"><i class="bi bi-plus-circle me-1"></i>Oluştur</button>
+        </div>
+        <small class="text-muted">Her seri: 50 adisyon + 1 koçan barkodu = <strong>51 QR etiket</strong> (32×57 mm)</small>
+      </div></div>
+      <div id="gen-res"></div>
+      <div class="card mt-3"><div class="card-body">
+        <h6 class="mb-3">Son Oluşturulanlar</h6>
+        <div id="recent-gen">Yükleniyor...</div>
+      </div></div>
+    </div>
+
+    <!-- ASSIGN -->
+    <div id="sec-assign" class="sec">
+      <div class="page-hdr"><h4><i class="bi bi-person-check me-2"></i>Atamalar</h4></div>
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="mb-3">Yeni Atama</h6>
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-sm-5">
+            <label class="form-label small mb-1">Adisyon Serisi (Atanmamış)</label>
+            <select id="as-series" class="form-select"></select>
+          </div>
+          <div class="col-12 col-sm-5">
+            <label class="form-label small mb-1">Garson</label>
+            <select id="as-user" class="form-select"></select>
+          </div>
+          <div class="col-12 col-sm-2">
+            <button class="btn btn-primary w-100" onclick="doAssign()">Ata</button>
+          </div>
+        </div>
+      </div></div>
+      <h6 class="mb-2">Mevcut Atamalar</h6>
+      <div id="assign-list">Yükleniyor...</div>
+    </div>
+
+    <!-- HISTORY -->
+    <div id="sec-history" class="sec">
+      <div class="page-hdr"><h4><i class="bi bi-clock-history me-2"></i>Okutma Geçmişi</h4></div>
+      <div class="row g-2 mb-3">
+        <div class="col-6"><select id="filt-g" class="form-select form-select-sm" onchange="loadHistory()"><option value="">Tüm garsonlar</option></select></div>
+        <div class="col-6"><input type="date" id="filt-d" class="form-control form-control-sm" onchange="loadHistory()"></div>
+      </div>
+      <div id="hist-list">Yükleniyor...</div>
+    </div>
+
+    <!-- USERS -->
+    <div id="sec-users" class="sec">
+      <div class="d-flex justify-content-between align-items-center page-hdr">
+        <h4 class="mb-0"><i class="bi bi-people me-2"></i>Kullanıcılar</h4>
+        <button class="btn btn-primary btn-sm" onclick="openUserModal()"><i class="bi bi-person-plus me-1"></i>Ekle</button>
+      </div>
+      <div id="user-list">Yükleniyor...</div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- Bottom nav (mobile) -->
+  <div id="bot-nav">
+    <button class="bn" data-s="dashboard"><i class="bi bi-grid-fill"></i>Panel</button>
+    <button class="bn" data-s="scan"><i class="bi bi-qr-code-scan"></i>Okut</button>
+    <button class="bn ay" data-s="series"><i class="bi bi-collection-fill"></i>Seriler</button>
+    <button class="bn go" data-s="my-series"><i class="bi bi-list-check"></i>Benim</button>
+    <button class="bn ay" data-s="assign"><i class="bi bi-person-check"></i>Atama</button>
+    <button class="bn ao" data-s="users"><i class="bi bi-people-fill"></i>Kişiler</button>
+  </div>
+
+</div><!-- /app-screen -->
+
+<div id="toast-wrap"></div>
+
+<!-- Modal: Kullanıcı -->
+<div class="modal fade" id="mUser" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="mUserTitle">Kullanıcı</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="eu-id">
+        <div class="mb-3"><label class="form-label">Ad Soyad</label><input id="eu-name" type="text" class="form-control" placeholder="Ahmet Yılmaz"></div>
+        <div class="mb-3"><label class="form-label">Kullanıcı Adı</label><input id="eu-uname" type="text" class="form-control" placeholder="ahmet"></div>
+        <div class="mb-3"><label class="form-label">Şifre <span id="eu-phint" class="text-muted small"></span></label><input id="eu-pwd" type="password" class="form-control"></div>
+        <div class="mb-3"><label class="form-label">Rol</label>
+          <select id="eu-role" class="form-select">
+            <option value="garson">Garson</option>
+            <option value="yonetici">Yönetici</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div id="eu-act-wrap" style="display:none" class="mb-0"><label class="form-label">Durum</label>
+          <select id="eu-active" class="form-select"><option value="true">Aktif</option><option value="false">Pasif</option></select>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">İptal</button><button class="btn btn-primary" onclick="saveUser()">Kaydet</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Seri Detay -->
+<div class="modal fade" id="mSeries" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title" id="mSeriesTitle">Seri Detayı</h5><button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body" id="mSeriesBody"><div class="text-center py-5"><div class="spinner-border"></div></div></div>
+      <div class="modal-footer">
+        <button id="btn-print" class="btn btn-success d-none" onclick="doPrint()"><i class="bi bi-printer me-1"></i>Etiket Yazdır</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+let sb = null;
+let ME = null;
+let allSeries = [];
+let sessScans = [];
+let curSeriesId = null;
+let cam = null;
+
+// ═══════════════════════════════════════════════════════════════
+//  SUPABASE INIT
+// ═══════════════════════════════════════════════════════════════
+function initSb(url, key) {
+  sb = supabase.createClient(url.trim(), key.trim());
+}
+
+async function doSetup() {
+  const url = document.getElementById('sb-url').value.trim();
+  const key = document.getElementById('sb-key').value.trim();
+  const err = document.getElementById('setup-err');
+  err.classList.add('d-none');
+  if (!url || !key) { err.textContent = 'URL ve key zorunludur'; err.classList.remove('d-none'); return; }
+  try {
+    initSb(url, key);
+    // Test connection
+    const { error } = await sb.from('users').select('id').limit(1);
+    if (error) throw error;
+    localStorage.setItem('adt_url', url);
+    localStorage.setItem('adt_key', key);
+    showLogin();
+  } catch(e) {
+    err.textContent = 'Bağlantı hatası: ' + (e.message || 'URL veya key hatalı');
+    err.classList.remove('d-none');
+    sb = null;
+  }
+}
+
+function showSetup() {
+  hide('login-screen'); hide('app-screen');
+  show('setup-screen', 'flex');
+  document.getElementById('sb-url').value = localStorage.getItem('adt_url') || '';
+  document.getElementById('sb-key').value = localStorage.getItem('adt_key') || '';
+}
+
+function showLogin() {
+  hide('setup-screen'); hide('app-screen');
+  show('login-screen', 'flex');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AUTH
+// ═══════════════════════════════════════════════════════════════
+async function doLogin() {
+  const u = document.getElementById('lu').value.trim();
+  const p = document.getElementById('lp').value;
+  const err = document.getElementById('login-err');
+  err.classList.add('d-none');
+  if (!u || !p) { err.textContent = 'Kullanıcı adı ve şifre giriniz'; err.classList.remove('d-none'); return; }
+  try {
+    const { data, error } = await sb.rpc('fn_login', { p_username: u, p_password: p });
+    if (error) throw error;
+    if (!data?.length) { err.textContent = 'Kullanıcı adı veya şifre hatalı'; err.classList.remove('d-none'); return; }
+    ME = data[0];
+    localStorage.setItem('adt_sess', JSON.stringify({ user: ME, at: Date.now() }));
+    startApp();
+  } catch(e) {
+    err.textContent = e.message || 'Giriş hatası';
+    err.classList.remove('d-none');
+  }
+}
+
+function logout() {
+  localStorage.removeItem('adt_sess');
+  ME = null; sessScans = []; stopCam();
+  hide('app-screen'); showLogin();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  APP START
+// ═══════════════════════════════════════════════════════════════
+function startApp() {
+  hide('login-screen'); hide('setup-screen');
+  show('app-screen');
+  const rl = { admin:'Admin', yonetici:'Yönetici', garson:'Garson' }[ME.role];
+  document.getElementById('sb-user').textContent = ME.name + ' · ' + rl;
+  document.getElementById('mob-badge').textContent = ME.name;
+
+  // Role visibility
+  document.querySelectorAll('.ao').forEach(el => el.style.display = ME.role==='admin' ? '' : 'none');
+  document.querySelectorAll('.ay').forEach(el => el.style.display = ['admin','yonetici'].includes(ME.role) ? '' : 'none');
+  document.querySelectorAll('.go').forEach(el => el.style.display = ME.role==='garson' ? '' : 'none');
+
+  // Nav handlers
+  document.querySelectorAll('[data-s]').forEach(btn => btn.addEventListener('click', () => { showSec(btn.dataset.s); closeSb(); }));
+
+  showSec(ME.role === 'garson' ? 'scan' : 'dashboard');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+function showSec(name) {
+  document.querySelectorAll('.sec').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('[data-s]').forEach(b => b.classList.remove('active'));
+  const s = document.getElementById('sec-' + name);
+  if (s) s.classList.add('active');
+  document.querySelectorAll(`[data-s="${name}"]`).forEach(b => b.classList.add('active'));
+  if (name !== 'scan') stopCam();
+  const L = { dashboard:loadDash, series:loadSeries, 'my-series':loadMySeries,
+               generate:loadRecentGen, assign:loadAssign, history:loadHistory,
+               users:loadUsers, scan:()=>setTimeout(()=>document.getElementById('scan-inp')?.focus(),100) };
+  if (L[name]) L[name]();
+}
+
+function openSb() { document.getElementById('sidebar').classList.add('open'); document.getElementById('overlay').classList.add('show'); }
+function closeSb() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('overlay').classList.remove('show'); }
+
+// ═══════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════════════
+async function loadDash() {
+  try {
+    const { data: stats } = await sb.rpc('fn_stats', { p_user_id: ME.id, p_role: ME.role });
+    let cards = '';
+    if (ME.role !== 'garson') {
+      cards = `
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-n text-primary">${stats.total_series||0}</div><div class="stat-l">Toplam Seri</div></div></div>
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-n text-info">${stats.assigned_series||0}</div><div class="stat-l">Atanmış</div></div></div>
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-n text-success">${stats.scanned_pages||0}</div><div class="stat-l">Okutuldu</div></div></div>
+        <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-n text-warning">${stats.remaining||0}</div><div class="stat-l">Kalan</div></div></div>`;
+    } else {
+      cards = `
+        <div class="col-4"><div class="stat-card"><div class="stat-n text-primary">${stats.series||0}</div><div class="stat-l">Serim</div></div></div>
+        <div class="col-4"><div class="stat-card"><div class="stat-n text-success">${stats.scanned||0}</div><div class="stat-l">Okutuldu</div></div></div>
+        <div class="col-4"><div class="stat-card"><div class="stat-n text-warning">${stats.remaining||0}</div><div class="stat-l">Kalan</div></div></div>`;
+    }
+    document.getElementById('stat-row').innerHTML = cards;
+
+    const el = document.getElementById('dash-recent');
+    if (['admin','yonetici'].includes(ME.role)) {
+      const { data: scans } = await sb.from('v_scans').select('*').limit(8);
+      if (!scans?.length) { el.innerHTML = '<p class="text-muted mb-0">Henüz okutma yok</p>'; return; }
+      el.innerHTML = `<div class="table-responsive"><table class="table tbl-sm mb-0"><thead><tr><th>Barkod</th><th>Garson</th><th>Saat</th></tr></thead><tbody>
+        ${scans.map(s=>`<tr><td><code style="font-size:10px">${s.page_barcode}</code></td><td>${s.garson_name||'-'}</td><td>${fdt(s.scanned_at)}</td></tr>`).join('')}
+      </tbody></table></div>`;
+    } else { el.innerHTML = '<p class="text-muted mb-0 small">Geçmişi yönetici görebilir</p>'; }
+  } catch(e) { console.error(e); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCAN
+// ═══════════════════════════════════════════════════════════════
+async function processScan(override) {
+  const inp = document.getElementById('scan-inp');
+  const code = (override || inp.value || '').trim();
+  if (!code) return;
+  inp.value = '';
+  const resEl = document.getElementById('scan-res');
+  resEl.style.display = 'block';
+  resEl.innerHTML = '<div class="scan-res bg-light text-center py-2"><div class="spinner-border spinner-border-sm me-2"></div>İşleniyor...</div>';
+  try {
+    const { data, error } = await sb.rpc('fn_scan', { p_barcode: code, p_user_id: ME.id, p_amount: null });
+    if (error) throw error;
+    const r = typeof data === 'string' ? JSON.parse(data) : data;
+    if (r.error) {
+      const warn = r.code === 'ALREADY_SCANNED';
+      resEl.innerHTML = `<div class="scan-res ${warn?'bg-warning text-dark':'bg-danger text-white'}">
+        <div class="d-flex align-items-center gap-2 mb-1"><i class="bi bi-${warn?'exclamation-triangle-fill':'x-circle-fill'} fs-5"></i>
+        <strong>${warn?'Daha Önce Okutulmuş!':'Hata'}</strong></div><div>${r.error}</div></div>`;
+    } else {
+      resEl.innerHTML = `<div class="scan-res bg-success text-white">
+        <div class="d-flex align-items-center gap-2 mb-2 fs-5"><i class="bi bi-check-circle-fill"></i><strong>Başarılı!</strong></div>
+        <div>Seri: <strong>${r.series_code}</strong></div>
+        <div>Adisyon No: <strong>${String(r.page_number).padStart(5,'0')}</strong></div>
+        <div>Garson: <strong>${r.garson}</strong></div></div>`;
+      sessScans.unshift(r);
+      renderSessScans();
+    }
+  } catch(e) {
+    resEl.innerHTML = `<div class="scan-res bg-danger text-white"><i class="bi bi-x-circle-fill me-2"></i>${e.message}</div>`;
+  }
+  setTimeout(() => inp.focus(), 50);
+}
+
+function renderSessScans() {
+  const el = document.getElementById('sess-list');
+  if (!sessScans.length) { el.innerHTML = '<p class="text-muted mb-0 small">Henüz okutma yapılmadı</p>'; return; }
+  el.innerHTML = `<div class="table-responsive"><table class="table tbl-sm table-striped mb-0"><thead><tr><th>Barkod</th><th>Seri</th><th>Garson</th></tr></thead><tbody>
+    ${sessScans.slice(0,12).map(s=>`<tr><td><code style="font-size:10px">${s.page_barcode}</code></td><td>${s.series_code}</td><td>${s.garson}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+function toggleCam() { cam ? stopCam() : startCam(); }
+
+function startCam() {
+  const rd = document.getElementById('qr-reader');
+  rd.style.display = 'block';
+  document.getElementById('cam-btn').innerHTML = '<i class="bi bi-camera-video-off"></i> Kapat';
+  cam = new Html5Qrcode('qr-reader');
+  cam.start({ facingMode:'environment' }, { fps:10, qrbox:{width:250,height:250} },
+    decoded => processScan(decoded), ()=>{}).catch(e => {
+      rd.style.display='none'; cam=null;
+      alert('Kamera açılamadı: ' + e + '\nTarayıcı izni verdiğinizden emin olun.');
+    });
+}
+
+function stopCam() {
+  if (!cam) return;
+  cam.stop().catch(()=>{}).finally(()=>{ cam=null; });
+  document.getElementById('qr-reader').style.display='none';
+  const b=document.getElementById('cam-btn');
+  if(b) b.innerHTML='<i class="bi bi-camera"></i> Kamerayı Aç';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SERIES LIST
+// ═══════════════════════════════════════════════════════════════
+async function loadSeries() {
+  try {
+    let q = sb.from('v_series').select('*');
+    if (ME.role === 'garson') q = q.eq('assigned_to_id', ME.id);
+    const { data, error } = await q;
+    if (error) throw error;
+    allSeries = data || [];
+    renderSeries(allSeries);
+  } catch(e) { document.getElementById('series-list').innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+}
+
+function filterSeries() {
+  const q = document.getElementById('sq').value.toLowerCase();
+  renderSeries(q ? allSeries.filter(s => s.series_code.toLowerCase().includes(q) || (s.assigned_to_name||'').toLowerCase().includes(q)) : allSeries);
+}
+
+function renderSeries(list) {
+  const el = document.getElementById('series-list');
+  if (!list.length) { el.innerHTML = '<div class="empty"><i class="bi bi-folder2-open"></i>Seri bulunamadı</div>'; return; }
+  el.innerHTML = list.map(s => {
+    const ok=s.scanned_count||0, tot=s.total_pages||50, pct=Math.round(ok/tot*100);
+    return `<div class="series-card" onclick="openSeriesDetail(${s.id})">
+      <div class="d-flex justify-content-between align-items-start">
+        <div><code class="fs-6 fw-bold">${s.series_code}</code>
+          ${s.assigned_to_name?`<span class="badge bg-info text-dark ms-2">${s.assigned_to_name}</span>`:`<span class="badge bg-secondary ms-2">Atanmamış</span>`}
+        </div>
+        <small class="text-muted">${fdts(s.created_at)}</small>
+      </div>
+      <div class="d-flex justify-content-between mt-2 mb-1">
+        <small class="text-muted">${ok} okutuldu / ${tot-ok} kalan</small>
+        <small class="fw-bold ${pct===100?'text-success':'text-warning'}">${pct}%</small>
+      </div>
+      <div class="prog"><div class="prog-f" style="width:${pct}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+async function openSeriesDetail(id) {
+  curSeriesId = id;
+  const modal = new bootstrap.Modal(document.getElementById('mSeries'));
+  document.getElementById('mSeriesBody').innerHTML = '<div class="text-center py-5"><div class="spinner-border"></div></div>';
+  document.getElementById('btn-print').classList.toggle('d-none', !['admin','yonetici'].includes(ME.role));
+  modal.show();
+  try {
+    const [{ data: series }, { data: pages }, { data: asgn }] = await Promise.all([
+      sb.from('adisyon_series').select('*').eq('id', id).single(),
+      sb.from('adisyon_pages').select('*').eq('series_id', id).order('page_number'),
+      sb.from('assignments').select('*').eq('series_id', id).maybeSingle()
+    ]);
+    let garsonName = null;
+    if (asgn) {
+      const { data: u } = await sb.from('users').select('name').eq('id', asgn.user_id).single();
+      garsonName = u?.name;
+    }
+    document.getElementById('mSeriesTitle').textContent = series.series_code;
+    const ok=(pages||[]).filter(p=>p.scanned), miss=(pages||[]).filter(p=>!p.scanned);
+    document.getElementById('mSeriesBody').innerHTML = `
+      <div class="row g-2 mb-3">
+        <div class="col-4"><div class="stat-card p-2"><div class="fw-bold text-primary">${(pages||[]).length}</div><small>Toplam</small></div></div>
+        <div class="col-4"><div class="stat-card p-2"><div class="fw-bold text-success">${ok.length}</div><small>Okutuldu</small></div></div>
+        <div class="col-4"><div class="stat-card p-2"><div class="fw-bold text-warning">${miss.length}</div><small>Bekliyor</small></div></div>
+      </div>
+      ${asgn?`<div class="alert alert-info py-2 mb-3"><i class="bi bi-person-fill me-1"></i>Garson: <strong>${garsonName||'?'}</strong></div>`
+             :`<div class="alert alert-warning py-2 mb-3">Bu seri henüz atanmamış</div>`}
+      ${miss.length?`<h6 class="mb-2">⚠️ Okutulmayan (${miss.length})</h6>
+        <div class="d-flex flex-wrap gap-1 mb-3">${miss.map(p=>`<div class="pg pg-no" title="${p.page_barcode}">${String(p.page_number).padStart(3,'0')}</div>`).join('')}</div>`
+        :`<div class="alert alert-success py-2 mb-3">✅ Tüm adisyonlar okutulmuş!</div>`}
+      <h6 class="mb-2">Tüm Adisyonlar</h6>
+      <div class="d-flex flex-wrap gap-1">
+        ${(pages||[]).map(p=>`<div class="pg ${p.scanned?'pg-ok':'pg-no'}" title="${p.scanned?'Okutuldu: '+fdt(p.scanned_at):'Bekliyor'}">${String(p.page_number).padStart(3,'0')}</div>`).join('')}
+      </div>`;
+  } catch(e) { document.getElementById('mSeriesBody').innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MY SERIES (garson)
+// ═══════════════════════════════════════════════════════════════
+async function loadMySeries() {
+  const el = document.getElementById('my-list');
+  try {
+    const { data } = await sb.from('v_series').select('*').eq('assigned_to_id', ME.id);
+    if (!data?.length) { el.innerHTML='<div class="empty"><i class="bi bi-inbox"></i>Henüz atanmış seri yok.<br><small>Yöneticinizden atama isteyin.</small></div>'; return; }
+    el.innerHTML = data.map(s=>{
+      const ok=s.scanned_count||0, tot=s.total_pages||50, pct=Math.round(ok/tot*100);
+      return `<div class="series-card" onclick="openSeriesDetail(${s.id})">
+        <code class="fs-5 fw-bold">${s.series_code}</code>
+        <div class="d-flex justify-content-between mt-2 mb-1"><small>${ok} okutuldu / ${tot-ok} kalan</small><small class="fw-bold ${pct===100?'text-success':'text-warning'}">${pct}%</small></div>
+        <div class="prog"><div class="prog-f" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GENERATE
+// ═══════════════════════════════════════════════════════════════
+async function doGenerate() {
+  const n = parseInt(document.getElementById('gen-n').value)||1;
+  const el = document.getElementById('gen-res');
+  el.innerHTML = '<div class="alert alert-light"><div class="spinner-border spinner-border-sm me-2"></div>Oluşturuluyor...</div>';
+  try {
+    const { data, error } = await sb.rpc('fn_create_series', { p_count: n, p_user_id: ME.id });
+    if (error) throw error;
+    const list = data || [];
+    el.innerHTML = `<div class="alert alert-success"><strong>✅ ${list.length} seri oluşturuldu!</strong>
+      <div class="mt-2 border-top pt-2">
+        ${list.map(g=>`<div class="d-flex justify-content-between align-items-center py-1">
+          <code class="fw-bold">${g.scode}</code>
+          <button class="btn btn-sm btn-outline-success" onclick="printById(${g.sid})"><i class="bi bi-printer me-1"></i>Etiket Yazdır</button>
+        </div>`).join('')}
+      </div></div>`;
+    loadRecentGen();
+  } catch(e) { el.innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+}
+
+async function loadRecentGen() {
+  try {
+    const { data } = await sb.from('v_series').select('*').limit(12);
+    const el = document.getElementById('recent-gen');
+    if (!data?.length) { el.innerHTML='<p class="text-muted mb-0">Henüz seri oluşturulmadı</p>'; return; }
+    el.innerHTML = data.map(s=>`<div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+      <div><code class="fw-bold">${s.series_code}</code>${s.assigned_to_name?`<span class="badge bg-info text-dark ms-2">${s.assigned_to_name}</span>`:''}<small class="text-muted ms-2">${fdts(s.created_at)}</small></div>
+      <button class="btn btn-sm btn-outline-success" onclick="printById(${s.id})"><i class="bi bi-printer"></i></button>
+    </div>`).join('');
+  } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PRINT LABELS (client-side QR generation)
+// ═══════════════════════════════════════════════════════════════
+async function doPrint() { if (curSeriesId) printById(curSeriesId); }
+
+async function printById(sid) {
+  toast('QR kodlar oluşturuluyor... ⏳');
+  try {
+    const [{ data: series }, { data: pages }] = await Promise.all([
+      sb.from('adisyon_series').select('*').eq('id', sid).single(),
+      sb.from('adisyon_pages').select('page_barcode,page_number').eq('series_id', sid).order('page_number')
+    ]);
+    const codes = [series.series_code, ...(pages||[]).map(p=>p.page_barcode)];
+    const qrs = await Promise.all(codes.map(c => QRCode.toDataURL(c, { width:220, margin:1, errorCorrectionLevel:'M' })));
+    const labels = codes.map((c,i)=>{
+      const main=i===0;
+      return `<div class="label${main?' main':''}">
+        <div class="top">${main?'KOÇAN':String(i).padStart(5,'0')}</div>
+        <img src="${qrs[i]}" alt="${c}">
+        <div class="code">${c}</div>
+      </div>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8">
+<title>Etiketler - ${series.series_code}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;background:#eee}
+.bar{background:#1e293b;color:white;padding:10px 16px;display:flex;align-items:center;gap:12px}
+.bar button{padding:6px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600}
+.bp{background:#22c55e;color:white}.bc{background:#ef4444;color:white}
+.page{background:white;padding:8mm;margin:10px auto;width:210mm}
+.grid{display:flex;flex-wrap:wrap;gap:1.5mm}
+.label{width:32mm;height:57mm;border:.4pt solid #bbb;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1mm;text-align:center;page-break-inside:avoid}
+.label.main{background:#f1f5f9;border:1pt solid #334155}
+.top{font-size:5.5pt;font-weight:bold;color:#334155;margin-bottom:.5mm}
+img{width:27mm;height:27mm}.code{font-size:4pt;color:#333;margin-top:.5mm;word-break:break-all}
+@media print{.bar{display:none}.page{margin:0;width:100%;padding:8mm}@page{size:A4 portrait;margin:0}}
+</style></head><body>
+<div class="bar"><strong>🏷️ ${series.series_code} — 51 Etiket (32×57 mm)</strong>
+<button class="bp" onclick="window.print()">🖨️ Yazdır</button>
+<button class="bc" onclick="window.close()">✕</button></div>
+<div class="page"><div class="grid">${labels}</div></div>
+</body></html>`;
+    const blob = new Blob([html], { type:'text/html' });
+    window.open(URL.createObjectURL(blob), '_blank');
+  } catch(e) { alert('Hata: ' + e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ASSIGNMENTS
+// ═══════════════════════════════════════════════════════════════
+async function loadAssign() {
+  try {
+    const [{ data: series }, { data: users }, { data: asgns }] = await Promise.all([
+      sb.from('v_series').select('id,series_code,assigned_to_id'),
+      sb.from('users').select('id,name,role,active').order('name'),
+      sb.from('assignments').select('*').order('assigned_at', { ascending:false })
+    ]);
+    const unassigned = (series||[]).filter(s=>!s.assigned_to_id);
+    const garsons = (users||[]).filter(u=>u.active && u.role==='garson');
+
+    document.getElementById('as-series').innerHTML =
+      '<option value="">— Seri seçin —</option>' + unassigned.map(s=>`<option value="${s.id}">${s.series_code}</option>`).join('');
+    document.getElementById('as-user').innerHTML =
+      '<option value="">— Garson seçin —</option>' + garsons.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+
+    const el = document.getElementById('assign-list');
+    if (!asgns?.length) { el.innerHTML='<div class="empty" style="padding:20px"><i class="bi bi-person-x"></i>Henüz atama yok</div>'; return; }
+    const sMap = Object.fromEntries((series||[]).map(s=>[s.id,s.series_code]));
+    const uMap = Object.fromEntries((users||[]).map(u=>[u.id,u.name]));
+    el.innerHTML = `<div class="table-responsive"><table class="table tbl-sm table-bordered mb-0">
+      <thead class="table-light"><tr><th>Seri</th><th>Garson</th><th>Tarih</th><th></th></tr></thead><tbody>
+      ${asgns.map(a=>`<tr>
+        <td><code class="fw-bold">${sMap[a.series_id]||'-'}</code></td>
+        <td>${uMap[a.user_id]||'-'}</td>
+        <td><small>${fdts(a.assigned_at)}</small></td>
+        <td><button class="btn btn-sm btn-outline-danger" onclick="removeAssign(${a.id})"><i class="bi bi-trash"></i></button></td>
+      </tr>`).join('')}</tbody></table></div>`;
+  } catch(e) { document.getElementById('assign-list').innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+}
+
+async function doAssign() {
+  const sid = document.getElementById('as-series').value;
+  const uid = document.getElementById('as-user').value;
+  if (!sid||!uid) { alert('Seri ve garson seçin'); return; }
+  try {
+    const { error } = await sb.from('assignments').insert({ series_id:+sid, user_id:uid, assigned_by:ME.id });
+    if (error) throw new Error(error.message.includes('unique')?'Bu seri zaten atanmış':error.message);
+    toast('Atama yapıldı ✓');
+    loadAssign();
+  } catch(e) { alert(e.message); }
+}
+
+async function removeAssign(id) {
+  if (!confirm('Atamayı kaldır?')) return;
+  try { await sb.from('assignments').delete().eq('id', id); loadAssign(); }
+  catch(e) { alert(e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HISTORY
+// ═══════════════════════════════════════════════════════════════
+async function loadHistory() {
+  try {
+    const fg = document.getElementById('filt-g');
+    if (fg.options.length === 1) {
+      const { data: users } = await sb.from('users').select('id,name').eq('role','garson').order('name');
+      (users||[]).forEach(u => { fg.innerHTML += `<option value="${u.id}">${u.name}</option>`; });
+    }
+    let q = sb.from('v_scans').select('*').limit(500);
+    if (fg.value) q = q.eq('garson_id', fg.value);
+    const fd = document.getElementById('filt-d').value;
+    if (fd) q = q.gte('scanned_at', fd+'T00:00:00').lte('scanned_at', fd+'T23:59:59');
+    const { data } = await q;
+    const el = document.getElementById('hist-list');
+    if (!data?.length) { el.innerHTML='<div class="empty" style="padding:20px"><i class="bi bi-search"></i>Kayıt bulunamadı</div>'; return; }
+    el.innerHTML = `<p class="text-muted small mb-2">${data.length} kayıt</p>
+      <div class="table-responsive"><table class="table tbl-sm table-striped table-bordered mb-0">
+        <thead class="table-light"><tr><th>Barkod</th><th>Garson</th><th>Tarih/Saat</th></tr></thead><tbody>
+        ${data.map(s=>`<tr><td><code style="font-size:10px">${s.page_barcode}</code></td><td>${s.garson_name||'-'}</td><td><small>${fdt(s.scanned_at)}</small></td></tr>`).join('')}
+        </tbody></table></div>`;
+  } catch(e) { document.getElementById('hist-list').innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  USERS
+// ═══════════════════════════════════════════════════════════════
+async function loadUsers() {
+  try {
+    const { data } = await sb.from('users').select('id,username,name,role,active,created_at').order('name');
+    document.getElementById('user-list').innerHTML = `<div class="table-responsive"><table class="table table-bordered tbl-sm mb-0">
+      <thead class="table-dark"><tr><th>Ad</th><th>Kullanıcı</th><th>Rol</th><th>Durum</th><th></th></tr></thead><tbody>
+      ${(data||[]).map(u=>`<tr>
+        <td class="fw-semibold">${u.name}</td>
+        <td><code>${u.username}</code></td>
+        <td><span class="rb r-${u.role}">${{admin:'Admin',yonetici:'Yönetici',garson:'Garson'}[u.role]}</span></td>
+        <td>${u.active?'<span class="badge bg-success">Aktif</span>':'<span class="badge bg-secondary">Pasif</span>'}</td>
+        <td><button class="btn btn-sm btn-outline-primary" onclick='openUserModal(${JSON.stringify(u)})'><i class="bi bi-pencil"></i></button></td>
+      </tr>`).join('')}</tbody></table></div>`;
+  } catch(e) { document.getElementById('user-list').innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
+}
+
+function openUserModal(user) {
+  const edit = !!user;
+  document.getElementById('mUserTitle').textContent = edit ? 'Kullanıcı Düzenle' : 'Kullanıcı Ekle';
+  document.getElementById('eu-id').value = user?.id||'';
+  document.getElementById('eu-name').value = user?.name||'';
+  document.getElementById('eu-uname').value = user?.username||'';
+  document.getElementById('eu-uname').disabled = edit;
+  document.getElementById('eu-pwd').value = '';
+  document.getElementById('eu-role').value = user?.role||'garson';
+  document.getElementById('eu-active').value = String(user?.active??true);
+  document.getElementById('eu-act-wrap').style.display = edit ? '' : 'none';
+  document.getElementById('eu-phint').textContent = edit ? '(boş = değişmez)' : '';
+  new bootstrap.Modal(document.getElementById('mUser')).show();
+}
+
+async function saveUser() {
+  const id = document.getElementById('eu-id').value;
+  const name = document.getElementById('eu-name').value.trim();
+  const uname = document.getElementById('eu-uname').value.trim();
+  const pwd = document.getElementById('eu-pwd').value;
+  const role = document.getElementById('eu-role').value;
+  const active = document.getElementById('eu-active').value === 'true';
+  try {
+    if (id) {
+      const { error } = await sb.rpc('fn_update_user', { p_id:id, p_name:name, p_role:role, p_active:active, p_password:pwd||null });
+      if (error) throw error;
+    } else {
+      if (!name||!uname||!pwd) { alert('Tüm alanlar zorunlu'); return; }
+      const { error } = await sb.rpc('fn_create_user', { p_username:uname, p_password:pwd, p_name:name, p_role:role });
+      if (error) throw error;
+    }
+    bootstrap.Modal.getInstance(document.getElementById('mUser')).hide();
+    toast('Kullanıcı kaydedildi ✓');
+    loadUsers();
+  } catch(e) { alert(e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════════
+function fdt(s) {
+  if (!s) return '-';
+  try { return new Date(s).toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+  catch { return s; }
+}
+function fdts(s) {
+  if (!s) return '-';
+  try { return new Date(s).toLocaleDateString('tr-TR'); } catch { return s; }
+}
+
+function toast(msg, type='success') {
+  const el = document.createElement('div');
+  el.className = 'toast-msg';
+  el.style.borderLeft = `4px solid ${type==='success'?'#22c55e':'#3b82f6'}`;
+  el.textContent = msg;
+  document.getElementById('toast-wrap').appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+function show(id, d='block') { const el=document.getElementById(id); if(el) el.style.display=d; }
+function hide(id) { const el=document.getElementById(id); if(el) el.style.display='none'; }
+
+// ═══════════════════════════════════════════════════════════════
+//  STARTUP
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  // Enter key handlers
+  document.getElementById('lp').addEventListener('keydown', e => { if(e.key==='Enter') doLogin(); });
+  document.getElementById('lu').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('lp').focus(); });
+  document.getElementById('scan-inp').addEventListener('keydown', e => { if(e.key==='Enter') processScan(); });
+
+  const url = localStorage.getItem('adt_url');
+  const key = localStorage.getItem('adt_key');
+
+  if (!url || !key) { showSetup(); return; }
+
+  initSb(url, key);
+
+  // Try auto-login from saved session
+  try {
+    const sess = JSON.parse(localStorage.getItem('adt_sess') || '{}');
+    if (sess.user && sess.at && (Date.now() - sess.at) < 12 * 3600 * 1000) {
+      ME = sess.user;
+      startApp();
+      return;
+    }
+  } catch {}
+
+  showLogin();
+});
+</script>
+</body>
+</html>
