@@ -10,6 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 :root { --sidebar-w: 230px; }
 body  { background:#f1f5f9; font-size:.9rem; }
@@ -197,11 +198,12 @@ body  { background:#f1f5f9; font-size:.9rem; }
     <nav class="sb-nav">
       <button class="nl" data-s="dashboard"><i class="bi bi-grid-fill"></i>Dashboard</button>
       <button class="nl" data-s="scan"><i class="bi bi-qr-code-scan"></i>Adisyon Okut</button>
-      <button class="nl ay" data-s="series"><i class="bi bi-collection-fill"></i>Seri Listesi</button>
+      <button class="nl aym" data-s="accounting"><i class="bi bi-person-lines-fill"></i>Personel Durumu</button>
+      <button class="nl aym" data-s="series"><i class="bi bi-collection-fill"></i>Seri Listesi</button>
       <button class="nl go" data-s="my-series"><i class="bi bi-list-check"></i>Adisyonlarım</button>
       <button class="nl ao" data-s="generate"><i class="bi bi-plus-square-fill"></i>Seri Oluştur</button>
       <button class="nl ay" data-s="assign"><i class="bi bi-person-check-fill"></i>Atamalar</button>
-      <button class="nl ay" data-s="history"><i class="bi bi-clock-history"></i>Geçmiş</button>
+      <button class="nl aym" data-s="history"><i class="bi bi-clock-history"></i>Geçmiş</button>
       <button class="nl ao" data-s="users"><i class="bi bi-people-fill"></i>Kullanıcılar</button>
     </nav>
     <div class="sb-foot">
@@ -362,6 +364,41 @@ body  { background:#f1f5f9; font-size:.9rem; }
       <div id="assign-list">Yükleniyor...</div>
     </div>
 
+    <!-- ACCOUNTING -->
+    <div id="sec-accounting" class="sec">
+      <div class="d-flex justify-content-between align-items-center page-hdr flex-wrap gap-2">
+        <h4 class="mb-0"><i class="bi bi-person-lines-fill me-2"></i>Personel Durumu</h4>
+        <div class="d-flex gap-2 align-items-center">
+          <select id="acc-filter" class="form-select form-select-sm" style="max-width:160px" onchange="loadAccounting()">
+            <option value="all">Tüm personel</option>
+            <option value="pending">Bekleyenler</option>
+            <option value="done">Tamamlananlar</option>
+          </select>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadAccounting()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+      </div>
+      <!-- Özet istatistik -->
+      <div id="acc-summary" class="row g-2 mb-3"></div>
+      <!-- Personel kartları -->
+      <div id="acc-list">Yükleniyor...</div>
+    </div>
+
+    <!-- Bekleyen Adisyonlar Modal -->
+    <div class="modal fade" id="mPending" tabindex="-1">
+      <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="mPendingTitle">Bekleyen Adisyonlar</h5>
+            <button class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="mPendingBody"></div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- HISTORY -->
     <div id="sec-history" class="sec">
       <div class="page-hdr"><h4><i class="bi bi-clock-history me-2"></i>Okutma Geçmişi</h4></div>
@@ -387,7 +424,8 @@ body  { background:#f1f5f9; font-size:.9rem; }
   <div id="bot-nav">
     <button class="bn" data-s="dashboard"><i class="bi bi-grid-fill"></i>Panel</button>
     <button class="bn" data-s="scan"><i class="bi bi-qr-code-scan"></i>Okut</button>
-    <button class="bn ay" data-s="series"><i class="bi bi-collection-fill"></i>Seriler</button>
+    <button class="bn aym" data-s="accounting"><i class="bi bi-person-lines-fill"></i>Personel</button>
+    <button class="bn aym" data-s="series"><i class="bi bi-collection-fill"></i>Seriler</button>
     <button class="bn go" data-s="my-series"><i class="bi bi-list-check"></i>Benim</button>
     <button class="bn ay" data-s="assign"><i class="bi bi-person-check"></i>Atama</button>
     <button class="bn ao" data-s="users"><i class="bi bi-people-fill"></i>Kişiler</button>
@@ -410,6 +448,7 @@ body  { background:#f1f5f9; font-size:.9rem; }
         <div class="mb-3"><label class="form-label">Rol</label>
           <select id="eu-role" class="form-select">
             <option value="garson">Garson</option>
+            <option value="muhasebe">Muhasebe</option>
             <option value="yonetici">Yönetici</option>
             <option value="admin">Admin</option>
           </select>
@@ -540,11 +579,15 @@ function startApp() {
   document.querySelectorAll('.ao').forEach(el => el.style.display = ME.role==='admin' ? '' : 'none');
   document.querySelectorAll('.ay').forEach(el => el.style.display = ['admin','yonetici'].includes(ME.role) ? '' : 'none');
   document.querySelectorAll('.go').forEach(el => el.style.display = ME.role==='garson' ? '' : 'none');
+  document.querySelectorAll('.aym').forEach(el => el.style.display = ['admin','yonetici','muhasebe'].includes(ME.role) ? '' : 'none');
 
   // Nav handlers
   document.querySelectorAll('[data-s]').forEach(btn => btn.addEventListener('click', () => { showSec(btn.dataset.s); closeSb(); }));
 
-  showSec(ME.role === 'garson' ? 'scan' : 'dashboard');
+  const startSec = ME.role === 'garson' ? 'scan'
+                 : ME.role === 'muhasebe' ? 'accounting'
+                 : 'dashboard';
+  showSec(startSec);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -559,6 +602,7 @@ function showSec(name) {
   if (name !== 'scan') stopCam();
   const L = { dashboard:loadDash, series:loadSeries, 'my-series':loadMySeries,
                generate:loadRecentGen, assign:loadAssign, history:loadHistory,
+               accounting:loadAccounting,
                users:loadUsers, scan:()=>setTimeout(()=>document.getElementById('scan-inp')?.focus(),100) };
   if (L[name]) L[name]();
 }
@@ -630,6 +674,7 @@ async function processScan(override) {
     } else {
       const amtHtml = amount != null
         ? `<div>Tutar: <strong>₺${amount.toFixed(2)}</strong></div>` : '';
+      window._lastScannedBarcode = code;
       resEl.innerHTML = `<div class="scan-res bg-success text-white">
         <div class="d-flex align-items-center gap-2 mb-2 fs-5">
           <i class="bi bi-check-circle-fill"></i><strong>Başarılı!</strong>
@@ -637,7 +682,32 @@ async function processScan(override) {
         <div>Seri: <strong>${r.series_code}</strong></div>
         <div>Adisyon No: <strong>${String(r.page_number).padStart(5,'0')}</strong></div>
         <div>Garson: <strong>${r.garson}</strong></div>
-        ${amtHtml}</div>`;
+        ${amtHtml}
+      </div>
+      <!-- OCR Tutar Okuma -->
+      <div class="card mt-2 border-warning">
+        <div class="card-body py-2 px-3">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="small fw-semibold text-warning-emphasis">📷 Fotoğrafla Tutar Oku</span>
+            <label class="btn btn-sm btn-outline-warning mb-0" style="cursor:pointer">
+              <i class="bi bi-camera me-1"></i>Adisyon Fotoğrafı
+              <input type="file" accept="image/*" capture="environment" style="display:none"
+                     onchange="handleOCRImage(this)">
+            </label>
+            <span id="ocr-status" class="small text-muted"></span>
+          </div>
+          <div id="ocr-result" class="mt-2 d-none">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <span class="small">Bulunan tutar:</span>
+              <input id="ocr-amount" type="number" step="0.01" class="form-control form-control-sm"
+                     style="max-width:120px">
+              <button class="btn btn-sm btn-warning fw-semibold" onclick="saveOCRAmount()">
+                <i class="bi bi-save me-1"></i>Kaydet
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>`;
       r.amount = amount;
       sessScans.unshift(r);
       renderSessScans();
@@ -648,6 +718,90 @@ async function processScan(override) {
     resEl.innerHTML = `<div class="scan-res bg-danger text-white"><i class="bi bi-x-circle-fill me-2"></i>${e.message}</div>`;
   }
   setTimeout(() => inp.focus(), 50);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  OCR — Adisyon fotoğrafından tutar okuma (Tesseract.js)
+// ═══════════════════════════════════════════════════════════════
+async function handleOCRImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = ''; // reset so same file can be selected again
+
+  const statusEl = document.getElementById('ocr-status');
+  const resultEl = document.getElementById('ocr-result');
+  statusEl.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1"></span>OCR işleniyor...</span>';
+  resultEl.classList.add('d-none');
+
+  try {
+    // Tesseract.js v5 — Türkçe + İngilizce (rakamlar için)
+    const { data: { text } } = await Tesseract.recognize(file, 'tur+eng');
+    const amount = parseAmountFromOCR(text);
+
+    if (amount !== null && amount > 0) {
+      document.getElementById('ocr-amount').value = amount.toFixed(2);
+      resultEl.classList.remove('d-none');
+      statusEl.innerHTML = `<span class="text-success">✓ Tutar bulundu: <strong>₺${amount.toFixed(2)}</strong></span>`;
+    } else {
+      statusEl.innerHTML = '<span class="text-danger">Tutar bulunamadı — lütfen manuel girin</span>';
+      document.getElementById('ocr-amount').value = '';
+      resultEl.classList.remove('d-none');
+    }
+  } catch(e) {
+    statusEl.innerHTML = `<span class="text-danger">OCR hatası: ${e.message}</span>`;
+  }
+}
+
+function parseAmountFromOCR(text) {
+  // Türkçe fiş anahtar kelimeleri (büyük/küçük harf duyarsız)
+  const keywords = ['genel toplam','toplam','ödenecek','tutar','total','ara toplam'];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Parasal sayı: 1-7 basamak + virgül/nokta + 2 basamak
+  const numRe = /\b(\d{1,7}[.,]\d{2})\b/g;
+
+  let best = null;
+
+  // 1. Anahtar kelime içeren satırlarda tara (alttan üste — son TOPLAM)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const lower = lines[i].toLowerCase();
+    if (keywords.some(k => lower.includes(k))) {
+      const nums = [...lines[i].matchAll(numRe)].map(m =>
+        parseFloat(m[1].replace(',', '.'))
+      ).filter(n => n > 0);
+      if (nums.length) { best = Math.max(...nums); break; }
+    }
+  }
+
+  // 2. Bulunamazsa — sayfanın son satırlarındaki en büyük sayı
+  if (best === null) {
+    const allNums = [];
+    for (const line of lines.slice(-8)) { // son 8 satır
+      const nums = [...line.matchAll(numRe)].map(m =>
+        parseFloat(m[1].replace(',', '.'))
+      ).filter(n => n > 0);
+      allNums.push(...nums);
+    }
+    if (allNums.length) best = Math.max(...allNums);
+  }
+
+  return best;
+}
+
+async function saveOCRAmount() {
+  const barcode = window._lastScannedBarcode;
+  if (!barcode) { alert('Barkod bilgisi bulunamadı'); return; }
+  const amt = parseFloat(document.getElementById('ocr-amount').value);
+  if (isNaN(amt) || amt <= 0) { alert('Geçerli bir tutar girin'); return; }
+
+  const { error } = await sb.from('adisyon_pages')
+    .update({ amount: amt })
+    .eq('page_barcode', barcode);
+  if (error) { alert('Hata: ' + error.message); return; }
+  toast(`✅ Tutar kaydedildi: ₺${amt.toFixed(2)}`);
+  document.getElementById('ocr-result').classList.add('d-none');
+  document.getElementById('ocr-status').innerHTML =
+    `<span class="text-success">✓ ₺${amt.toFixed(2)} kaydedildi</span>`;
 }
 
 function renderSessScans() {
@@ -1380,6 +1534,224 @@ async function removeAssign(id) {
   if (!confirm('Atamayı kaldır?')) return;
   try { await sb.from('assignments').delete().eq('id', id); loadAssign(); }
   catch(e) { alert(e.message); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ACCOUNTING — Personel bazlı durum raporu
+// ═══════════════════════════════════════════════════════════════
+async function loadAccounting() {
+  const listEl    = document.getElementById('acc-list');
+  const summaryEl = document.getElementById('acc-summary');
+  const filter    = document.getElementById('acc-filter')?.value || 'all';
+  listEl.innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
+
+  try {
+    // Tüm garsonları + serilerini + sayfalarını çek
+    const [{ data: garsons }, { data: pages }, { data: asgns }] = await Promise.all([
+      sb.from('users').select('id,name').eq('role','garson').eq('active',true).order('name'),
+      sb.from('adisyon_pages').select('id,series_id,scanned,defective,amount,page_barcode,page_number'),
+      sb.from('assignments').select('series_id,user_id')
+    ]);
+
+    // Seri → garson eşleştirmesi
+    const seriesOwner = {};
+    (asgns||[]).forEach(a => seriesOwner[a.series_id] = a.user_id);
+
+    // Sayfa → garson gruplaması
+    const byGarson = {};
+    (garsons||[]).forEach(g => { byGarson[g.id] = { ...g, pages: [] }; });
+    (pages||[]).forEach(p => {
+      const ownerId = seriesOwner[p.series_id];
+      if (ownerId && byGarson[ownerId]) byGarson[ownerId].pages.push(p);
+    });
+
+    const rows = Object.values(byGarson);
+
+    // Özet istatistik
+    const totalGarsons  = rows.length;
+    const totalPages    = rows.reduce((s,r) => s + r.pages.length, 0);
+    const totalScanned  = rows.reduce((s,r) => s + r.pages.filter(p=>p.scanned).length, 0);
+    const totalPending  = rows.reduce((s,r) => s + r.pages.filter(p=>!p.scanned&&!p.defective).length, 0);
+    const totalAmount   = rows.reduce((s,r) => s + r.pages.reduce((a,p)=>a+(p.amount||0),0), 0);
+
+    summaryEl.innerHTML = `
+      <div class="col-6 col-md-3"><div class="stat-card text-center py-2">
+        <div class="fw-bold text-primary fs-5">${totalGarsons}</div><small>Garson</small>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card text-center py-2">
+        <div class="fw-bold text-success fs-5">${totalScanned}</div><small>Okutuldu</small>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card text-center py-2">
+        <div class="fw-bold text-warning fs-5">${totalPending}</div><small>Bekliyor</small>
+      </div></div>
+      <div class="col-6 col-md-3"><div class="stat-card text-center py-2">
+        <div class="fw-bold text-info fs-5">₺${totalAmount.toFixed(2)}</div><small>Toplam Tutar</small>
+      </div></div>`;
+
+    // Filtrele
+    const filtered = rows.filter(r => {
+      const pending = r.pages.filter(p=>!p.scanned&&!p.defective).length;
+      if (filter === 'pending') return pending > 0;
+      if (filter === 'done')    return pending === 0 && r.pages.length > 0;
+      return true;
+    });
+
+    if (!filtered.length) {
+      listEl.innerHTML = '<div class="empty"><i class="bi bi-check2-all"></i>Tüm adisyonlar okutulmuş!</div>';
+      return;
+    }
+
+    listEl.innerHTML = filtered.map(r => {
+      const total    = r.pages.length;
+      const scanned  = r.pages.filter(p=>p.scanned).length;
+      const defective= r.pages.filter(p=>p.defective).length;
+      const pending  = total - scanned - defective;
+      const amount   = r.pages.reduce((s,p)=>s+(p.amount||0),0);
+      const amtCount = r.pages.filter(p=>p.scanned&&p.amount!=null).length;
+      const pct      = total > 0 ? Math.round(scanned/(total-defective||1)*100) : 0;
+      const allDone  = pending === 0;
+
+      return `<div class="card mb-3 ${allDone?'border-success':''}">
+        <div class="card-body py-3">
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+            <div>
+              <span class="fw-bold fs-6">${r.name}</span>
+              ${allDone
+                ? '<span class="badge bg-success ms-2">✅ Tamamlandı</span>'
+                : `<span class="badge bg-warning text-dark ms-2">⚠️ ${pending} bekliyor</span>`}
+            </div>
+            <div class="text-end">
+              <div class="fw-bold text-info">₺${amount.toFixed(2)}</div>
+              <small class="text-muted">${amtCount}/${scanned} tutarlı</small>
+            </div>
+          </div>
+          <!-- İlerleme çubuğu -->
+          <div class="d-flex justify-content-between small mt-2 mb-1">
+            <span class="text-muted">${scanned} okutuldu · ${pending} bekliyor${defective>0?' · '+defective+' bozuk':''}</span>
+            <span class="fw-bold ${allDone?'text-success':'text-warning'}">${pct}%</span>
+          </div>
+          <div class="prog mb-2"><div class="prog-f ${allDone?'bg-success':''}" style="width:${pct}%"></div></div>
+          <!-- Aksiyon butonları -->
+          <div class="d-flex gap-2 flex-wrap">
+            ${pending > 0
+              ? `<button class="btn btn-sm btn-outline-warning" onclick="showPending('${r.id}','${r.name}')">
+                   <i class="bi bi-list-ul me-1"></i>${pending} Bekleyen Adisyonu Gör
+                 </button>`
+              : ''}
+            ${scanned > 0
+              ? `<button class="btn btn-sm btn-outline-info" onclick="showScanned('${r.id}','${r.name}')">
+                   <i class="bi bi-check2-all me-1"></i>Okutulmuşları Gör (${scanned})
+                 </button>`
+              : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+  }
+}
+
+async function showPending(garsonId, garsonName) {
+  document.getElementById('mPendingTitle').textContent = `⚠️ ${garsonName} — Bekleyen Adisyonlar`;
+  const body = document.getElementById('mPendingBody');
+  body.innerHTML = '<div class="text-center py-3"><div class="spinner-border"></div></div>';
+  new bootstrap.Modal(document.getElementById('mPending')).show();
+
+  try {
+    // Garsonun serilerini bul
+    const { data: asgns } = await sb.from('assignments').select('series_id').eq('user_id', garsonId);
+    const seriesIds = (asgns||[]).map(a=>a.series_id);
+    if (!seriesIds.length) { body.innerHTML = '<p class="text-muted">Atanmış seri yok</p>'; return; }
+
+    // Bekleyen sayfaları çek
+    const { data: pages } = await sb.from('adisyon_pages')
+      .select('page_barcode,page_number,series_id')
+      .in('series_id', seriesIds)
+      .eq('scanned', false)
+      .eq('defective', false)
+      .order('series_id').order('page_number');
+
+    // Seri kodlarını al
+    const { data: series } = await sb.from('adisyon_series')
+      .select('id,series_code').in('id', seriesIds);
+    const seriesMap = {};
+    (series||[]).forEach(s => seriesMap[s.id] = s.series_code);
+
+    if (!pages?.length) {
+      body.innerHTML = '<div class="alert alert-success">✅ Bekleyen adisyon yok!</div>';
+      return;
+    }
+
+    // Seri grupla
+    const grouped = {};
+    pages.forEach(p => {
+      const sc = seriesMap[p.series_id] || p.series_id;
+      if (!grouped[sc]) grouped[sc] = [];
+      grouped[sc].push(p);
+    });
+
+    body.innerHTML = Object.entries(grouped).map(([sc, ps]) => `
+      <div class="mb-3">
+        <div class="fw-bold mb-2"><code>${sc}</code>
+          <span class="badge bg-warning text-dark ms-2">${ps.length} bekliyor</span>
+        </div>
+        <div class="d-flex flex-wrap gap-1">
+          ${ps.map(p=>`<div class="pg pg-no" title="${p.page_barcode}">
+            ${String(p.page_number).padStart(3,'0')}
+          </div>`).join('')}
+        </div>
+      </div>`).join('<hr class="my-2">');
+  } catch(e) {
+    body.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+  }
+}
+
+async function showScanned(garsonId, garsonName) {
+  document.getElementById('mPendingTitle').textContent = `✅ ${garsonName} — Okutulmuş Adisyonlar`;
+  const body = document.getElementById('mPendingBody');
+  body.innerHTML = '<div class="text-center py-3"><div class="spinner-border"></div></div>';
+  new bootstrap.Modal(document.getElementById('mPending')).show();
+
+  try {
+    const { data: asgns } = await sb.from('assignments').select('series_id').eq('user_id', garsonId);
+    const seriesIds = (asgns||[]).map(a=>a.series_id);
+    if (!seriesIds.length) { body.innerHTML = '<p class="text-muted">Atanmış seri yok</p>'; return; }
+
+    const { data: pages } = await sb.from('adisyon_pages')
+      .select('page_barcode,page_number,series_id,scanned_at,amount')
+      .in('series_id', seriesIds)
+      .eq('scanned', true)
+      .order('scanned_at', { ascending: false })
+      .limit(200);
+
+    const { data: series } = await sb.from('adisyon_series').select('id,series_code').in('id', seriesIds);
+    const seriesMap = {};
+    (series||[]).forEach(s => seriesMap[s.id] = s.series_code);
+
+    if (!pages?.length) { body.innerHTML = '<p class="text-muted">Henüz okutma yok</p>'; return; }
+
+    const totalAmt = pages.reduce((s,p)=>s+(p.amount||0),0);
+    body.innerHTML = `
+      <div class="alert alert-info py-2 mb-3 small">
+        ${pages.length} adisyon · Toplam tutar: <strong>₺${totalAmt.toFixed(2)}</strong>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped mb-0" style="font-size:.8rem">
+          <thead><tr><th>Seri</th><th>No</th><th>Tarih</th><th class="text-end">Tutar</th></tr></thead>
+          <tbody>
+            ${pages.map(p=>`<tr>
+              <td><code>${seriesMap[p.series_id]||'?'}</code></td>
+              <td>${String(p.page_number).padStart(3,'0')}</td>
+              <td>${fdt(p.scanned_at)}</td>
+              <td class="text-end">${p.amount!=null?'₺'+Number(p.amount).toFixed(2):'—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch(e) {
+    body.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
