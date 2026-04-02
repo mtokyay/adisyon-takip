@@ -344,23 +344,51 @@ body  { background:#f1f5f9; font-size:.9rem; }
     <!-- ASSIGN -->
     <div id="sec-assign" class="sec">
       <div class="page-hdr"><h4><i class="bi bi-person-check me-2"></i>Atamalar</h4></div>
+
+      <!-- Barkod ile arama -->
       <div class="card mb-3"><div class="card-body">
-        <h6 class="mb-3">Yeni Atama</h6>
-        <div class="row g-2 align-items-end">
-          <div class="col-12 col-sm-5">
-            <label class="form-label small mb-1">Adisyon Serisi (Atanmamış)</label>
-            <select id="as-series" class="form-select"></select>
+        <h6 class="mb-3"><i class="bi bi-upc-scan me-2 text-primary"></i>Koçan Barkodu Okut</h6>
+        <div class="input-group mb-2">
+          <span class="input-group-text bg-light"><i class="bi bi-upc-scan text-secondary"></i></span>
+          <input type="text" id="as-barcode-input" class="form-control"
+                 placeholder="Barkod okutun veya seri kodu yazın..."
+                 autocomplete="off" autocorrect="off" spellcheck="false"
+                 onkeydown="if(event.key==='Enter'){lookupSeriesBarcode();}">
+          <button class="btn btn-outline-secondary" onclick="toggleAssignCam()" title="Kamera ile tara">
+            <i class="bi bi-camera" id="as-cam-icon"></i>
+          </button>
+          <button class="btn btn-primary" onclick="lookupSeriesBarcode()">
+            <i class="bi bi-search"></i>
+          </button>
+        </div>
+        <div id="as-cam-reader" class="mb-2" style="display:none; max-width:360px;"></div>
+
+        <!-- Bulunan seri -->
+        <div id="as-found-wrap" style="display:none;">
+          <div id="as-found-info" class="alert py-2 mb-3"></div>
+          <div class="row g-2 align-items-end" id="as-assign-row" style="display:none;">
+            <div class="col-12 col-sm-8">
+              <label class="form-label small mb-1">Garson Seç</label>
+              <select id="as-user" class="form-select"></select>
+            </div>
+            <div class="col-12 col-sm-4">
+              <button class="btn btn-success w-100" onclick="doAssign()">
+                <i class="bi bi-person-check me-1"></i>Ata
+              </button>
+            </div>
           </div>
-          <div class="col-12 col-sm-5">
-            <label class="form-label small mb-1">Garson</label>
-            <select id="as-user" class="form-select"></select>
-          </div>
-          <div class="col-12 col-sm-2">
-            <button class="btn btn-primary w-100" onclick="doAssign()">Ata</button>
-          </div>
+          <button class="btn btn-sm btn-outline-secondary mt-2" onclick="resetAssignSearch()">
+            <i class="bi bi-x-circle me-1"></i>Temizle
+          </button>
         </div>
       </div></div>
-      <h6 class="mb-2">Mevcut Atamalar</h6>
+
+      <!-- Mevcut atamalar -->
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0">Mevcut Atamalar</h6>
+        <input type="text" id="assign-search" class="form-control form-control-sm" style="max-width:200px"
+               placeholder="Seri / garson ara..." oninput="filterAssignList(this.value)">
+      </div>
       <div id="assign-list">Yükleniyor...</div>
     </div>
 
@@ -599,7 +627,8 @@ function showSec(name) {
   const s = document.getElementById('sec-' + name);
   if (s) s.classList.add('active');
   document.querySelectorAll(`[data-s="${name}"]`).forEach(b => b.classList.add('active'));
-  if (name !== 'scan') stopCam();
+  if (name !== 'scan')   stopCam();
+  if (name !== 'assign') stopAssignCam();
   const L = { dashboard:loadDash, series:loadSeries, 'my-series':loadMySeries,
                generate:loadRecentGen, assign:loadAssign, history:loadHistory,
                accounting:loadAccounting,
@@ -1488,44 +1517,150 @@ function printModeModal() {
 // ═══════════════════════════════════════════════════════════════
 //  ASSIGNMENTS
 // ═══════════════════════════════════════════════════════════════
+let _assignAllSeries = [];   // tüm seriler (arama için)
+let _assignGarsons   = [];   // aktif garsonlar
+let _assignAsgns     = [];   // mevcut atamalar (filtreleme için)
+let _assignFoundId   = null; // barkodla bulunan seri id
+let _assignCamScanner = null;
+
 async function loadAssign() {
   try {
     const [{ data: series }, { data: users }, { data: asgns }] = await Promise.all([
-      sb.from('v_series').select('id,series_code,assigned_to_id'),
+      sb.from('v_series').select('id,series_code,assigned_to_id,assigned_to_name,total_pages,scanned_count'),
       sb.from('users').select('id,name,role,active').order('name'),
-      sb.from('assignments').select('*').order('assigned_at', { ascending:false })
+      sb.from('assignments').select('*,adisyon_series(series_code),users(name)').order('assigned_at', { ascending:false })
     ]);
-    const unassigned = (series||[]).filter(s=>!s.assigned_to_id);
-    const garsons = (users||[]).filter(u=>u.active && u.role==='garson');
 
-    document.getElementById('as-series').innerHTML =
-      '<option value="">— Seri seçin —</option>' + unassigned.map(s=>`<option value="${s.id}">${s.series_code}</option>`).join('');
+    _assignAllSeries = series || [];
+    _assignGarsons   = (users||[]).filter(u=>u.active && u.role==='garson');
+    _assignAsgns     = asgns || [];
+
+    // Garson dropdown'unu doldur
     document.getElementById('as-user').innerHTML =
-      '<option value="">— Garson seçin —</option>' + garsons.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
+      '<option value="">— Garson seçin —</option>' + _assignGarsons.map(u=>`<option value="${u.id}">${u.name}</option>`).join('');
 
-    const el = document.getElementById('assign-list');
-    if (!asgns?.length) { el.innerHTML='<div class="empty" style="padding:20px"><i class="bi bi-person-x"></i>Henüz atama yok</div>'; return; }
-    const sMap = Object.fromEntries((series||[]).map(s=>[s.id,s.series_code]));
-    const uMap = Object.fromEntries((users||[]).map(u=>[u.id,u.name]));
-    el.innerHTML = `<div class="table-responsive"><table class="table tbl-sm table-bordered mb-0">
-      <thead class="table-light"><tr><th>Seri</th><th>Garson</th><th>Tarih</th><th></th></tr></thead><tbody>
-      ${asgns.map(a=>`<tr>
-        <td><code class="fw-bold">${sMap[a.series_id]||'-'}</code></td>
-        <td>${uMap[a.user_id]||'-'}</td>
-        <td><small>${fdts(a.assigned_at)}</small></td>
-        <td><button class="btn btn-sm btn-outline-danger" onclick="removeAssign(${a.id})"><i class="bi bi-trash"></i></button></td>
-      </tr>`).join('')}</tbody></table></div>`;
+    renderAssignList(_assignAsgns);
+    // Barkod input'una odaklan
+    setTimeout(()=>{ document.getElementById('as-barcode-input')?.focus(); }, 100);
   } catch(e) { document.getElementById('assign-list').innerHTML=`<div class="alert alert-danger">${e.message}</div>`; }
 }
 
+function renderAssignList(asgns) {
+  const el = document.getElementById('assign-list');
+  if (!asgns?.length) {
+    el.innerHTML='<div class="empty" style="padding:20px"><i class="bi bi-person-x"></i>Henüz atama yok</div>';
+    return;
+  }
+  el.innerHTML = `<div class="table-responsive"><table class="table tbl-sm table-bordered mb-0">
+    <thead class="table-light"><tr><th>Seri Kodu</th><th>Garson</th><th>Tarih</th><th></th></tr></thead><tbody>
+    ${asgns.map(a=>`<tr>
+      <td><code class="fw-bold">${a.adisyon_series?.series_code||'-'}</code></td>
+      <td>${a.users?.name||'-'}</td>
+      <td><small>${fdts(a.assigned_at)}</small></td>
+      <td><button class="btn btn-sm btn-outline-danger" onclick="removeAssign(${a.id})"><i class="bi bi-trash"></i></button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function filterAssignList(q) {
+  if (!q) { renderAssignList(_assignAsgns); return; }
+  const lq = q.toLowerCase();
+  renderAssignList(_assignAsgns.filter(a =>
+    (a.adisyon_series?.series_code||'').toLowerCase().includes(lq) ||
+    (a.users?.name||'').toLowerCase().includes(lq)
+  ));
+}
+
+function lookupSeriesBarcode() {
+  const code = (document.getElementById('as-barcode-input').value||'').trim().toUpperCase();
+  if (!code) { alert('Barkod veya seri kodu girin'); return; }
+
+  const found = _assignAllSeries.find(s => s.series_code === code);
+  const wrap  = document.getElementById('as-found-wrap');
+  const info  = document.getElementById('as-found-info');
+  const row   = document.getElementById('as-assign-row');
+  wrap.style.display = 'block';
+
+  if (!found) {
+    info.className = 'alert alert-danger py-2 mb-2';
+    info.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i><strong>${code}</strong> — Bu seri koduna ait koçan bulunamadı.`;
+    row.style.display = 'none';
+    _assignFoundId = null;
+    return;
+  }
+
+  _assignFoundId = found.id;
+  const progress = found.total_pages
+    ? `${found.scanned_count||0}/${found.total_pages} okutuldu`
+    : '';
+
+  if (found.assigned_to_id) {
+    // Zaten atanmış
+    info.className = 'alert alert-warning py-2 mb-2';
+    info.innerHTML = `<i class="bi bi-person-check me-2"></i><strong>${found.series_code}</strong> —
+      <span class="text-danger fw-bold">${found.assigned_to_name}</span> adlı garsona atanmış durumda.
+      ${progress ? `<span class="ms-2 badge bg-secondary">${progress}</span>` : ''}
+      <br><small class="text-muted">Yeniden atamak için garsonu seçin; eski atama silinecek.</small>`;
+    row.style.display = '';
+  } else {
+    // Atanmamış
+    info.className = 'alert alert-success py-2 mb-2';
+    info.innerHTML = `<i class="bi bi-check-circle me-2"></i><strong>${found.series_code}</strong> —
+      Atanmamış, hazır.
+      ${progress ? `<span class="ms-2 badge bg-secondary">${progress}</span>` : ''}`;
+    row.style.display = '';
+  }
+}
+
+function resetAssignSearch() {
+  document.getElementById('as-barcode-input').value = '';
+  document.getElementById('as-found-wrap').style.display = 'none';
+  _assignFoundId = null;
+  stopAssignCam();
+  setTimeout(()=>{ document.getElementById('as-barcode-input')?.focus(); }, 50);
+}
+
+// ── Kamera taraması ──────────────────────────────────────────────
+function toggleAssignCam() {
+  const reader = document.getElementById('as-cam-reader');
+  if (_assignCamScanner) { stopAssignCam(); return; }
+  reader.style.display = 'block';
+  document.getElementById('as-cam-icon').className = 'bi bi-camera-video-off';
+  _assignCamScanner = new Html5Qrcode('as-cam-reader');
+  _assignCamScanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 250, height: 120 } },
+    (decodedText) => {
+      document.getElementById('as-barcode-input').value = decodedText;
+      stopAssignCam();
+      lookupSeriesBarcode();
+    },
+    () => {}
+  ).catch(()=>{ stopAssignCam(); alert('Kamera açılamadı.'); });
+}
+
+function stopAssignCam() {
+  if (_assignCamScanner) {
+    _assignCamScanner.stop().catch(()=>{});
+    _assignCamScanner.clear();
+    _assignCamScanner = null;
+  }
+  document.getElementById('as-cam-reader').style.display = 'none';
+  document.getElementById('as-cam-icon').className = 'bi bi-camera';
+}
+
 async function doAssign() {
-  const sid = document.getElementById('as-series').value;
   const uid = document.getElementById('as-user').value;
-  if (!sid||!uid) { alert('Seri ve garson seçin'); return; }
+  if (!_assignFoundId) { alert('Önce koçan barkodunu okutun'); return; }
+  if (!uid)            { alert('Garson seçin'); return; }
   try {
-    const { error } = await sb.from('assignments').insert({ series_id:+sid, user_id:uid, assigned_by:ME.id });
-    if (error) throw new Error(error.message.includes('unique')?'Bu seri zaten atanmış':error.message);
-    toast('Atama yapıldı ✓');
+    // Varsa eski atamayı sil, yenisini ekle
+    await sb.from('assignments').delete().eq('series_id', _assignFoundId);
+    const { error } = await sb.from('assignments').insert({ series_id:_assignFoundId, user_id:uid, assigned_by:ME.id });
+    if (error) throw new Error(error.message);
+    const gName = _assignGarsons.find(g=>g.id===uid)?.name||'';
+    const sCode = _assignAllSeries.find(s=>s.id===_assignFoundId)?.series_code||'';
+    toast(`✓ ${sCode} → ${gName} ataması yapıldı`);
+    resetAssignSearch();
     loadAssign();
   } catch(e) { alert(e.message); }
 }
