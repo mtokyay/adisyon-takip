@@ -1520,6 +1520,8 @@ function printModeModal() {
 let _assignAllSeries = [];   // tüm seriler (arama için)
 let _assignGarsons   = [];   // aktif garsonlar
 let _assignAsgns     = [];   // mevcut atamalar (filtreleme için)
+let _assignSMap      = {};   // series_id → series_code
+let _assignUMap      = {};   // user_id   → name
 let _assignFoundId   = null; // barkodla bulunan seri id
 let _assignCamScanner = null;
 
@@ -1528,12 +1530,14 @@ async function loadAssign() {
     const [{ data: series }, { data: users }, { data: asgns }] = await Promise.all([
       sb.from('v_series').select('id,series_code,assigned_to_id,assigned_to_name,total_pages,scanned_count'),
       sb.from('users').select('id,name,role,active').order('name'),
-      sb.from('assignments').select('*,adisyon_series(series_code),users(name)').order('assigned_at', { ascending:false })
+      sb.from('assignments').select('id,series_id,user_id,assigned_at').order('assigned_at', { ascending:false })
     ]);
 
     _assignAllSeries = series || [];
     _assignGarsons   = (users||[]).filter(u=>u.active && u.role==='garson');
     _assignAsgns     = asgns || [];
+    _assignSMap      = Object.fromEntries((_assignAllSeries).map(s=>[s.id, s.series_code]));
+    _assignUMap      = Object.fromEntries((users||[]).map(u=>[u.id, u.name]));
 
     // Garson dropdown'unu doldur
     document.getElementById('as-user').innerHTML =
@@ -1554,8 +1558,8 @@ function renderAssignList(asgns) {
   el.innerHTML = `<div class="table-responsive"><table class="table tbl-sm table-bordered mb-0">
     <thead class="table-light"><tr><th>Seri Kodu</th><th>Garson</th><th>Tarih</th><th></th></tr></thead><tbody>
     ${asgns.map(a=>`<tr>
-      <td><code class="fw-bold">${a.adisyon_series?.series_code||'-'}</code></td>
-      <td>${a.users?.name||'-'}</td>
+      <td><code class="fw-bold">${_assignSMap[a.series_id]||'-'}</code></td>
+      <td>${_assignUMap[a.user_id]||'-'}</td>
       <td><small>${fdts(a.assigned_at)}</small></td>
       <td><button class="btn btn-sm btn-outline-danger" onclick="removeAssign(${a.id})"><i class="bi bi-trash"></i></button></td>
     </tr>`).join('')}</tbody></table></div>`;
@@ -1565,8 +1569,8 @@ function filterAssignList(q) {
   if (!q) { renderAssignList(_assignAsgns); return; }
   const lq = q.toLowerCase();
   renderAssignList(_assignAsgns.filter(a =>
-    (a.adisyon_series?.series_code||'').toLowerCase().includes(lq) ||
-    (a.users?.name||'').toLowerCase().includes(lq)
+    (_assignSMap[a.series_id]||'').toLowerCase().includes(lq) ||
+    (_assignUMap[a.user_id]||'').toLowerCase().includes(lq)
   ));
 }
 
@@ -1657,8 +1661,8 @@ async function doAssign() {
     await sb.from('assignments').delete().eq('series_id', _assignFoundId);
     const { error } = await sb.from('assignments').insert({ series_id:_assignFoundId, user_id:uid, assigned_by:ME.id });
     if (error) throw new Error(error.message);
-    const gName = _assignGarsons.find(g=>g.id===uid)?.name||'';
-    const sCode = _assignAllSeries.find(s=>s.id===_assignFoundId)?.series_code||'';
+    const gName = _assignUMap[uid] || _assignGarsons.find(g=>g.id===uid)?.name || uid;
+    const sCode = _assignSMap[_assignFoundId] || _assignAllSeries.find(s=>s.id===_assignFoundId)?.series_code || String(_assignFoundId);
     toast(`✓ ${sCode} → ${gName} ataması yapıldı`);
     resetAssignSearch();
     loadAssign();
