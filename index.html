@@ -122,6 +122,19 @@ body  { background:#f1f5f9; font-size:.9rem; }
 .tbl-sm td,.tbl-sm th { padding:.3rem .5rem; font-size:.83rem; }
 .empty { text-align:center; padding:36px 16px; color:#94a3b8; }
 .empty i { font-size:2.8rem; display:block; margin-bottom:8px; }
+
+/* ── Adisyon Mark Toggle Hücreleri ── */
+.mark-cell {
+  display:inline-block; width:34px; height:28px; line-height:28px; text-align:center;
+  border-radius:5px; cursor:pointer; font-size:.95rem; font-weight:700;
+  border:1px solid #dee2e6; background:#f8f9fa; color:#adb5bd;
+  transition:all .15s; user-select:none;
+}
+.mark-cell:hover { border-color:#6c757d; background:#e9ecef; }
+.mark-cell.m1  { background:#d1fae5; border-color:#10b981; color:#065f46; }  /* / */
+.mark-cell.m2  { background:#dbeafe; border-color:#3b82f6; color:#1e3a5f; }  /* X */
+.mark-cell.m-ocr { outline:2px dashed #f59e0b; outline-offset:1px; }       /* OCR tespiti */
+.price-row-input { max-width:90px; }
 </style>
 </head>
 <body>
@@ -204,6 +217,7 @@ body  { background:#f1f5f9; font-size:.9rem; }
       <button class="nl ao" data-s="generate"><i class="bi bi-plus-square-fill"></i>Seri Oluştur</button>
       <button class="nl ay" data-s="assign"><i class="bi bi-person-check-fill"></i>Atamalar</button>
       <button class="nl aym" data-s="history"><i class="bi bi-clock-history"></i>Geçmiş</button>
+      <button class="nl ay" data-s="prices"><i class="bi bi-tag-fill"></i>Fiyat Listesi</button>
       <button class="nl ao" data-s="users"><i class="bi bi-people-fill"></i>Kullanıcılar</button>
     </nav>
     <div class="sb-foot">
@@ -438,6 +452,34 @@ body  { background:#f1f5f9; font-size:.9rem; }
     </div>
 
     <!-- USERS -->
+    <!-- PRICES -->
+    <div id="sec-prices" class="sec">
+      <div class="d-flex justify-content-between align-items-center page-hdr flex-wrap gap-2">
+        <h4 class="mb-0"><i class="bi bi-tag me-2"></i>Fiyat Listesi</h4>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-secondary" onclick="resetPrices()"><i class="bi bi-arrow-counterclockwise me-1"></i>Varsayılana Dön</button>
+          <button class="btn btn-sm btn-success" onclick="savePricesUI()"><i class="bi bi-save me-1"></i>Kaydet</button>
+        </div>
+      </div>
+      <div class="card"><div class="card-body p-2">
+        <p class="text-muted small mb-2">Bu fiyatlar fotoğraf OCR'ında hesaplama için kullanılır. "/" = 1 porsiyon, "X" = 2 porsiyon.</p>
+        <div class="table-responsive">
+          <table class="table table-bordered table-sm mb-0" id="price-config-table">
+            <thead class="table-primary">
+              <tr>
+                <th style="width:5%">No</th>
+                <th>Kalem Adı</th>
+                <th class="text-center" style="width:18%">Az (₺)</th>
+                <th class="text-center" style="width:18%">Tam (₺)</th>
+              </tr>
+            </thead>
+            <tbody id="price-config-body"></tbody>
+          </table>
+        </div>
+      </div></div>
+    </div>
+
+    <!-- USERS -->
     <div id="sec-users" class="sec">
       <div class="d-flex justify-content-between align-items-center page-hdr">
         <h4 class="mb-0"><i class="bi bi-people me-2"></i>Kullanıcılar</h4>
@@ -462,6 +504,21 @@ body  { background:#f1f5f9; font-size:.9rem; }
 </div><!-- /app-screen -->
 
 <div id="toast-wrap"></div>
+
+<!-- Modal: OCR Fotoğraf Büyüt -->
+<div class="modal fade" id="mOCRPhoto" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0">Adisyon Fotoğrafı</h6>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body text-center p-2">
+        <img id="ocr-photo-modal-img" src="" style="max-width:100%;border-radius:6px">
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: Kullanıcı -->
 <div class="modal fade" id="mUser" tabindex="-1">
@@ -631,7 +688,7 @@ function showSec(name) {
   if (name !== 'assign') stopAssignCam();
   const L = { dashboard:loadDash, series:loadSeries, 'my-series':loadMySeries,
                generate:loadRecentGen, assign:loadAssign, history:loadHistory,
-               accounting:loadAccounting,
+               accounting:loadAccounting, prices:loadPrices,
                users:loadUsers, scan:()=>setTimeout(()=>document.getElementById('scan-inp')?.focus(),100) };
   if (L[name]) L[name]();
 }
@@ -713,26 +770,54 @@ async function processScan(override) {
         <div>Garson: <strong>${r.garson}</strong></div>
         ${amtHtml}
       </div>
-      <!-- OCR Tutar Okuma -->
+      <!-- OCR Adisyon Hesaplama -->
       <div class="card mt-2 border-warning">
         <div class="card-body py-2 px-3">
           <div class="d-flex align-items-center gap-2 flex-wrap">
-            <span class="small fw-semibold text-warning-emphasis">📷 Fotoğrafla Tutar Oku</span>
+            <span class="small fw-semibold text-warning-emphasis">📷 Adisyon Hesapla</span>
             <label class="btn btn-sm btn-outline-warning mb-0" style="cursor:pointer">
-              <i class="bi bi-camera me-1"></i>Adisyon Fotoğrafı
+              <i class="bi bi-camera me-1"></i>Fotoğraf Çek
               <input type="file" accept="image/*" capture="environment" style="display:none"
                      onchange="handleOCRImage(this)">
             </label>
             <span id="ocr-status" class="small text-muted"></span>
           </div>
+          <!-- Sonuç paneli -->
           <div id="ocr-result" class="mt-2 d-none">
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-              <span class="small">Bulunan tutar:</span>
-              <input id="ocr-amount" type="number" step="0.01" class="form-control form-control-sm"
-                     style="max-width:120px">
-              <button class="btn btn-sm btn-warning fw-semibold" onclick="saveOCRAmount()">
-                <i class="bi bi-save me-1"></i>Kaydet
-              </button>
+            <div class="row g-2 align-items-start">
+              <!-- Küçük fotoğraf önizleme -->
+              <div class="col-auto d-none d-sm-block">
+                <img id="ocr-photo" src="" style="max-width:90px;max-height:130px;border-radius:6px;border:1px solid #dee2e6;cursor:pointer"
+                     title="Büyütmek için tıkla" onclick="document.getElementById('ocr-photo-modal-img').src=this.src;new bootstrap.Modal(document.getElementById('mOCRPhoto')).show()">
+              </div>
+              <!-- İşaret tablosu -->
+              <div class="col">
+                <div class="table-responsive">
+                  <table class="table table-bordered mb-1" style="font-size:0.77rem">
+                    <thead class="table-warning">
+                      <tr>
+                        <th>Kalem</th>
+                        <th class="text-center px-1">Az<br><small class="text-muted fw-normal" id="ocr-h-az"></small></th>
+                        <th class="text-center px-1">Tam<br><small class="text-muted fw-normal" id="ocr-h-tam"></small></th>
+                        <th class="text-end">Tutar</th>
+                      </tr>
+                    </thead>
+                    <tbody id="ocr-mark-body"></tbody>
+                    <tfoot>
+                      <tr class="table-dark">
+                        <td colspan="3" class="fw-bold small">TOPLAM</td>
+                        <td class="text-end fw-bold" id="ocr-total-display">₺0</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                  <small class="text-muted fst-italic">Hücreye tıkla: — → <span class="text-success">/</span> → <span class="text-primary">X</span></small>
+                  <button class="btn btn-sm btn-warning fw-semibold ms-auto" onclick="saveOCRAmount()">
+                    <i class="bi bi-save me-1"></i>Kaydet
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -750,87 +835,221 @@ async function processScan(override) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  OCR — Adisyon fotoğrafından tutar okuma (Tesseract.js)
+//  FİYAT KONFİGÜRASYONU — localStorage
 // ═══════════════════════════════════════════════════════════════
+const DEFAULT_PRICES = [
+  { name:'Mercimek - Tavuk Suyu - Tatlı - Cacık - Yoğut - Pilav', az:60,  tam:100 },
+  { name:'Kelle - Mevsim Yemekleri - Süper Tatlılar (İlaveli)',   az:80,  tam:120 },
+  { name:'Sebzeli Et Yemekleri',                                  az:160, tam:250 },
+  { name:'Izgara - Ciğer - Hindi',                                az:180, tam:280 },
+  { name:'Et Yemekleri',                                          az:260, tam:420 },
+  { name:'Özel Yemekler',                                         az:500, tam:800 },
+  { name:'Bardak Su',                                             az:5,   tam:5   },
+  { name:'Şişe Su',                                               az:20,  tam:20  },
+  { name:'Ayran - Maden Suyu',                                    az:30,  tam:30  },
+  { name:'Meşrubat',                                              az:75,  tam:75  },
+];
+
+function getPrices() {
+  try { const s=localStorage.getItem('adisyon_prices'); if(s) return JSON.parse(s); } catch(e){}
+  return DEFAULT_PRICES.map(r=>({...r}));
+}
+function setPrices(arr) { localStorage.setItem('adisyon_prices', JSON.stringify(arr)); }
+
+function loadPrices() {
+  const prices = getPrices();
+  const tbody = document.getElementById('price-config-body');
+  tbody.innerHTML = prices.map((p,i)=>`
+    <tr>
+      <td class="text-center fw-bold text-muted">${i+1}</td>
+      <td><input class="form-control form-control-sm" id="pn-${i}" value="${p.name}"></td>
+      <td><input class="form-control form-control-sm text-center price-row-input" id="paz-${i}" type="number" min="0" value="${p.az}"></td>
+      <td><input class="form-control form-control-sm text-center price-row-input" id="ptam-${i}" type="number" min="0" value="${p.tam}"></td>
+    </tr>`).join('');
+}
+
+function savePricesUI() {
+  const prices = getPrices();
+  for(let i=0;i<10;i++){
+    prices[i].name = document.getElementById(`pn-${i}`)?.value || prices[i].name;
+    prices[i].az   = parseFloat(document.getElementById(`paz-${i}`)?.value) || 0;
+    prices[i].tam  = parseFloat(document.getElementById(`ptam-${i}`)?.value) || 0;
+  }
+  setPrices(prices);
+  toast('✓ Fiyat listesi kaydedildi');
+}
+
+function resetPrices() {
+  if (!confirm('Fiyatlar varsayılana sıfırlansın mı?')) return;
+  localStorage.removeItem('adisyon_prices');
+  loadPrices();
+  toast('Fiyatlar sıfırlandı');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  OCR — Adisyon fotoğrafından işaret okuma + hesaplama
+// ═══════════════════════════════════════════════════════════════
+let _ocrMarks = Array(10).fill(null).map(()=>({az:0,tam:0}));
+
 async function handleOCRImage(input) {
   const file = input.files[0];
   if (!file) return;
-  input.value = ''; // reset so same file can be selected again
+  input.value = '';
 
   const statusEl = document.getElementById('ocr-status');
   const resultEl = document.getElementById('ocr-result');
-  statusEl.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1"></span>OCR işleniyor...</span>';
+  statusEl.innerHTML = '<span class="text-primary"><span class="spinner-border spinner-border-sm me-1"></span>Fotoğraf analiz ediliyor...</span>';
   resultEl.classList.add('d-none');
 
-  try {
-    // Tesseract.js v5 — Türkçe + İngilizce (rakamlar için)
-    const { data: { text } } = await Tesseract.recognize(file, 'tur+eng');
-    const amount = parseAmountFromOCR(text);
+  // Fotoğrafı önizlemeye koy
+  const photoURL = URL.createObjectURL(file);
+  const photoEl = document.getElementById('ocr-photo');
+  if (photoEl) { photoEl.src = photoURL; }
 
-    if (amount !== null && amount > 0) {
-      document.getElementById('ocr-amount').value = amount.toFixed(2);
-      resultEl.classList.remove('d-none');
-      statusEl.innerHTML = `<span class="text-success">✓ Tutar bulundu: <strong>₺${amount.toFixed(2)}</strong></span>`;
-    } else {
-      statusEl.innerHTML = '<span class="text-danger">Tutar bulunamadı — lütfen manuel girin</span>';
-      document.getElementById('ocr-amount').value = '';
-      resultEl.classList.remove('d-none');
-    }
+  try {
+    // OCR — Tesseract word bounding box'ları ile
+    const { data } = await Tesseract.recognize(file, 'tur+eng');
+    _ocrMarks = detectMarksFromOCR(data);
+
+    buildMarkTable();
+    resultEl.classList.remove('d-none');
+
+    const detected = _ocrMarks.reduce((s,m)=>s+(m.az>0?1:0)+(m.tam>0?1:0),0);
+    statusEl.innerHTML = detected > 0
+      ? `<span class="text-success">✓ ${detected} işaret tespit edildi — doğrulayın</span>`
+      : `<span class="text-warning">İşaret tespit edilemedi — lütfen manuel işaretleyin</span>`;
+
   } catch(e) {
-    statusEl.innerHTML = `<span class="text-danger">OCR hatası: ${e.message}</span>`;
+    // OCR başarısız olsa bile tabloyu göster (manuel giriş için)
+    _ocrMarks = Array(10).fill(null).map(()=>({az:0,tam:0}));
+    buildMarkTable();
+    resultEl.classList.remove('d-none');
+    statusEl.innerHTML = `<span class="text-warning">OCR çalışmadı — manuel işaretleyin</span>`;
   }
 }
 
-function parseAmountFromOCR(text) {
-  // Türkçe fiş anahtar kelimeleri (büyük/küçük harf duyarsız)
-  const keywords = ['genel toplam','toplam','ödenecek','tutar','total','ara toplam'];
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+function detectMarksFromOCR(data) {
+  const marks = Array(10).fill(null).map(()=>({az:0,tam:0}));
+  const words  = data.words || [];
+  if (!words.length) return marks;
 
-  // Parasal sayı: 1-7 basamak + virgül/nokta + 2 basamak
-  const numRe = /\b(\d{1,7}[.,]\d{2})\b/g;
+  // Görüntü boyutlarını tahmin et (tüm kelimelerin bbox'undan)
+  let maxX=0, maxY=0;
+  words.forEach(w=>{ maxX=Math.max(maxX,w.bbox.x1); maxY=Math.max(maxY,w.bbox.y1); });
+  if (!maxX || !maxY) return marks;
 
-  let best = null;
+  // Tablonun yaklaşık konumu (adisyon yapısına göre)
+  // Başlık+header: üstten %28, altbilgi: alttan %8
+  // Az kolonu: genişliğin %62-%79'u, Tam kolonu: %79-%100'ü
+  const tableTop    = maxY * 0.28;
+  const tableBottom = maxY * 0.92;
+  const rowH        = (tableBottom - tableTop) / 10;
+  const azStart     = maxX * 0.62;
+  const tamStart    = maxX * 0.79;
 
-  // 1. Anahtar kelime içeren satırlarda tara (alttan üste — son TOPLAM)
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const lower = lines[i].toLowerCase();
-    if (keywords.some(k => lower.includes(k))) {
-      const nums = [...lines[i].matchAll(numRe)].map(m =>
-        parseFloat(m[1].replace(',', '.'))
-      ).filter(n => n > 0);
-      if (nums.length) { best = Math.max(...nums); break; }
-    }
+  // "/" veya "X" benzeri karakterleri ara
+  const slashRe = /^[\/\\|lI]$/;
+  const xRe     = /^[xX×Xx]$/;
+
+  for (const word of words) {
+    const t  = word.text.trim();
+    const cx = (word.bbox.x0 + word.bbox.x1) / 2;
+    const cy = (word.bbox.y0 + word.bbox.y1) / 2;
+
+    if (cx < azStart) continue;                      // sol sütunlar değil
+    if (cy < tableTop || cy > tableBottom) continue; // tablo dışı
+
+    const isSlash = slashRe.test(t);
+    const isX     = xRe.test(t);
+    if (!isSlash && !isX) continue;
+
+    const rowIdx = Math.min(9, Math.max(0, Math.floor((cy - tableTop) / rowH)));
+    const col    = cx < tamStart ? 'az' : 'tam';
+    marks[rowIdx][col] = isX ? 2 : 1;
   }
+  return marks;
+}
 
-  // 2. Bulunamazsa — sayfanın son satırlarındaki en büyük sayı
-  if (best === null) {
-    const allNums = [];
-    for (const line of lines.slice(-8)) { // son 8 satır
-      const nums = [...line.matchAll(numRe)].map(m =>
-        parseFloat(m[1].replace(',', '.'))
-      ).filter(n => n > 0);
-      allNums.push(...nums);
-    }
-    if (allNums.length) best = Math.max(...allNums);
+function buildMarkTable() {
+  const prices = getPrices();
+  const tbody  = document.getElementById('ocr-mark-body');
+  tbody.innerHTML = prices.map((p,i)=>{
+    const az  = _ocrMarks[i]?.az  || 0;
+    const tam = _ocrMarks[i]?.tam || 0;
+    const rowTotal = az * p.az + (az===2? p.az:0) + tam * p.tam + (tam===2? p.tam:0);
+    // Gerçek hesap: az=1 → 1×az, az=2 → 2×az (X işareti)
+    const rt = az * p.az + tam * p.tam;  // az:1=1×fiyat, az:2=2×fiyat
+    return `<tr id="ocr-row-${i}">
+      <td class="small" style="font-size:0.72rem;line-height:1.2">${p.name}</td>
+      <td class="text-center p-1">
+        <span class="mark-cell${az===1?' m1':az===2?' m2':''}${az>0?' m-ocr':''}"
+              onclick="toggleMark(${i},'az')" title="Tıkla: — / X">${az===0?'—':az===1?'/':'X'}</span>
+        <div class="text-muted" style="font-size:0.65rem">₺${p.az}</div>
+      </td>
+      <td class="text-center p-1">
+        <span class="mark-cell${tam===1?' m1':tam===2?' m2':''}${tam>0?' m-ocr':''}"
+              onclick="toggleMark(${i},'tam')" title="Tıkla: — / X">${tam===0?'—':tam===1?'/':'X'}</span>
+        <div class="text-muted" style="font-size:0.65rem">₺${p.tam}</div>
+      </td>
+      <td class="text-end fw-semibold small" id="ocr-row-total-${i}">${rt>0?'₺'+rt.toLocaleString('tr-TR'):''}</td>
+    </tr>`;
+  }).join('');
+  updateOCRTotal();
+}
+
+function toggleMark(rowIdx, col) {
+  const cur  = _ocrMarks[rowIdx][col];
+  _ocrMarks[rowIdx][col] = (cur + 1) % 3; // 0→1→2→0
+  refreshMarkRow(rowIdx);
+  updateOCRTotal();
+}
+
+function refreshMarkRow(i) {
+  const prices = getPrices();
+  const p   = prices[i];
+  const az  = _ocrMarks[i]?.az  || 0;
+  const tam = _ocrMarks[i]?.tam || 0;
+  const rt  = az * p.az + tam * p.tam;
+
+  // Az hücre
+  const azEl = document.querySelector(`#ocr-row-${i} td:nth-child(2) .mark-cell`);
+  if (azEl) {
+    azEl.className = 'mark-cell' + (az===1?' m1':az===2?' m2':'');
+    azEl.textContent = az===0?'—':az===1?'/':'X';
   }
+  // Tam hücre
+  const tamEl = document.querySelector(`#ocr-row-${i} td:nth-child(3) .mark-cell`);
+  if (tamEl) {
+    tamEl.className = 'mark-cell' + (tam===1?' m1':tam===2?' m2':'');
+    tamEl.textContent = tam===0?'—':tam===1?'/':'X';
+  }
+  // Satır tutarı
+  const rtEl = document.getElementById(`ocr-row-total-${i}`);
+  if (rtEl) rtEl.textContent = rt>0?'₺'+rt.toLocaleString('tr-TR'):'';
+}
 
-  return best;
+function updateOCRTotal() {
+  const prices = getPrices();
+  const total  = _ocrMarks.reduce((sum,m,i)=> sum + m.az*prices[i].az + m.tam*prices[i].tam, 0);
+  const el = document.getElementById('ocr-total-display');
+  if (el) el.textContent = '₺' + total.toLocaleString('tr-TR');
+  return total;
 }
 
 async function saveOCRAmount() {
   const barcode = window._lastScannedBarcode;
   if (!barcode) { alert('Barkod bilgisi bulunamadı'); return; }
-  const amt = parseFloat(document.getElementById('ocr-amount').value);
-  if (isNaN(amt) || amt <= 0) { alert('Geçerli bir tutar girin'); return; }
+  const amt = updateOCRTotal();
+  if (!amt || amt <= 0) { alert('Toplam tutar 0 — lütfen işaretleri kontrol edin'); return; }
 
   const { error } = await sb.from('adisyon_pages')
     .update({ amount: amt })
     .eq('page_barcode', barcode);
   if (error) { alert('Hata: ' + error.message); return; }
-  toast(`✅ Tutar kaydedildi: ₺${amt.toFixed(2)}`);
+  toast(`✅ Tutar kaydedildi: ₺${amt.toLocaleString('tr-TR')}`);
   document.getElementById('ocr-result').classList.add('d-none');
   document.getElementById('ocr-status').innerHTML =
-    `<span class="text-success">✓ ₺${amt.toFixed(2)} kaydedildi</span>`;
+    `<span class="text-success">✓ ₺${amt.toLocaleString('tr-TR')} kaydedildi</span>`;
 }
 
 function renderSessScans() {
